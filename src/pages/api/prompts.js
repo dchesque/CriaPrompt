@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   // GET: Listar prompts (com filtros)
   if (req.method === 'GET') {
-    const { publico, categoria, termo, limit = 50, meusPosts } = req.query;
+    const { publico, categoria, termo, limit = 50, meusPosts, tags } = req.query;
     
     try {
       let query = supabase
@@ -28,6 +28,8 @@ export default async function handler(req, res) {
           views,
           created_at,
           user_id,
+          tags,
+          campos_personalizados,
           users:user_id (
             email
           )
@@ -54,6 +56,12 @@ export default async function handler(req, res) {
       if (termo) {
         query = query.or(`titulo.ilike.%${termo}%,texto.ilike.%${termo}%`);
       }
+      
+      // Filtrar por tags se fornecidas
+      if (tags) {
+        const tagsArray = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
+        query = query.contains('tags', tagsArray);
+      }
 
       const { data, error } = await query;
 
@@ -68,13 +76,42 @@ export default async function handler(req, res) {
 
   // POST: Criar novo prompt
   if (req.method === 'POST') {
-    const { titulo, texto, categoria, publico } = req.body;
+    const { titulo, texto, categoria, publico, tags, campos_personalizados } = req.body;
     
     if (!titulo || !texto) {
       return res.status(400).json({ error: 'Título e texto são obrigatórios' });
     }
 
     try {
+      // Validar campos personalizados
+      let camposValidados = null;
+      if (campos_personalizados && Array.isArray(campos_personalizados)) {
+        // Verificar se todos os campos têm nome
+        const camposSemNome = campos_personalizados.filter(campo => !campo.nome);
+        if (camposSemNome.length > 0) {
+          return res.status(400).json({ error: 'Todos os campos personalizados devem ter um nome' });
+        }
+        
+        // Limitar para no máximo 10 campos personalizados
+        if (campos_personalizados.length > 10) {
+          return res.status(400).json({ error: 'Máximo de 10 campos personalizados permitidos' });
+        }
+        
+        camposValidados = campos_personalizados;
+      }
+      
+      // Validar tags
+      let tagsValidadas = null;
+      if (tags && Array.isArray(tags)) {
+        // Limitar para no máximo 5 tags
+        if (tags.length > 5) {
+          return res.status(400).json({ error: 'Máximo de 5 tags permitidas' });
+        }
+        
+        // Normalizar tags (lowercase, sem espaços)
+        tagsValidadas = tags.map(tag => tag.trim().toLowerCase()).filter(tag => tag);
+      }
+
       const { data, error } = await supabase
         .from('prompts')
         .insert([
@@ -84,7 +121,9 @@ export default async function handler(req, res) {
             categoria: categoria || 'geral', 
             publico: publico !== false, 
             user_id: userId,
-            views: 0
+            views: 0,
+            tags: tagsValidadas || [],
+            campos_personalizados: camposValidados
           }
         ])
         .select();

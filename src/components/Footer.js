@@ -5,12 +5,16 @@ export default function Footer() {
     <footer className="bg-gray-800 text-white py-10">
       <div className="container-app">
         <div className="flex flex-col md:flex-row justify-between items-center">
-          <div className="mb-6 md:mb-0">
-            <h3 className="text-2xl font-bold mb-2">CriaPrompt</h3>
-            <p className="text-gray-400">
-              A plataforma para criar, organizar e compartilhar prompts de IA
-            </p>
-          </div>
+        <div className="mb-6 md:mb-0">
+              <img 
+                src="/logo.png" 
+                alt="CriaPrompt Logo" 
+                className="h-12 w-auto mb-2" 
+              />
+              <p className="text-gray-400">
+                A plataforma para criar, organizar e compartilhar prompts de IA
+              </p>
+            </div>
           <div className="flex flex-col space-y-2 md:space-y-0 md:flex-row md:space-x-6">
             <Link href="/explorar">
               <span className="text-gray-400 hover:text-white cursor-pointer">Explorar</span>

@@ -65,8 +65,14 @@ export default function Header() {
     <header className="bg-white shadow">
       <div className="container-app py-4">
         <div className="flex justify-between items-center">
-          <Link href="/">
-            <span className="text-2xl font-bold text-indigo-600 cursor-pointer">CriaPrompt</span>
+        <Link href="/">
+            <div className="flex items-center">
+              <img 
+                src="/logo.png" 
+                alt="CriaPrompt Logo" 
+                className="h-10 w-auto cursor-pointer" 
+              />
+            </div>
           </Link>
 
           {/* Menu para dispositivos móveis */}

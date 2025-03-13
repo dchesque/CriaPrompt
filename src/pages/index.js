@@ -122,10 +122,10 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-100">
       <Head>
-        <title>CriaPrompt - Crie, salve e compartilhe prompts para IA</title>
-        <meta name="description" content="Aplicativo para criação de prompts de IA" />
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
+          <title>CriaPrompt - Crie, salve e compartilhe prompts para IA</title>
+          <meta name="description" content="Aplicativo para criação de prompts de IA" />
+          <link rel="icon" href="/logo.png" />
+        </Head>
 
       <Header />
 
