@@ -1,23 +1,70 @@
-// src/pages/criar.js
 import Head from 'next/head';
-import Header from '../components/Header';
-import AuthGuard from '../components/AuthGuard';
-import { useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import Header from '../../../components/Header';
+import AuthGuard from '../../../components/AuthGuard';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { supabase } from '../../../lib/supabaseClient';
 
-export default function CriarPrompt() {
+export default function EditarPrompt() {
   const router = useRouter();
+  const { id } = router.query;
+  
   const [titulo, setTitulo] = useState('');
   const [prompt, setPrompt] = useState('');
   const [categoria, setCategoria] = useState('geral');
   const [isPublico, setIsPublico] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function carregarPrompt() {
+      if (!id) return;
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          router.push('/auth/login');
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('prompts')
+          .select('*')
+          .eq('id', id)
+          .eq('user_id', session.user.id)
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data) {
+          // Se não encontrou o prompt ou ele não pertence ao usuário
+          router.push('/dashboard');
+          return;
+        }
+
+        // Preencher o formulário com os dados do prompt
+        setTitulo(data.titulo);
+        setPrompt(data.texto);
+        setCategoria(data.categoria);
+        setIsPublico(data.publico);
+      } catch (error) {
+        console.error('Erro ao carregar prompt:', error);
+        setError('Não foi possível carregar o prompt');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    carregarPrompt();
+  }, [id, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    setSaving(true);
     setError(null);
 
     try {
@@ -28,44 +75,54 @@ export default function CriarPrompt() {
         return;
       }
 
-      const { data, error } = await supabase
+      // Atualizar o prompt
+      const { error } = await supabase
         .from('prompts')
-        .insert([
-          { 
-            titulo, 
-            texto: prompt, 
-            categoria, 
-            publico: isPublico, 
-            user_id: session.user.id 
-          }
-        ])
-        .select();
+        .update({
+          titulo,
+          texto: prompt,
+          categoria,
+          publico: isPublico
+        })
+        .eq('id', id)
+        .eq('user_id', session.user.id);
 
       if (error) throw error;
 
-      alert('Prompt criado com sucesso!');
+      alert('Prompt atualizado com sucesso!');
       router.push('/dashboard');
     } catch (error) {
-      console.error('Erro:', error);
-      setError('Falha ao criar o prompt. Por favor, tente novamente.');
+      console.error('Erro ao atualizar:', error);
+      setError('Falha ao atualizar o prompt. Por favor, tente novamente.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <Header />
+        <main className="container-app py-10">
+          <p className="text-center">Carregando...</p>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-100">
         <Head>
-          <title>Criar Prompt | CriaPrompt</title>
-          <meta name="description" content="Crie seus prompts personalizados" />
+          <title>Editar Prompt | CriaPrompt</title>
+          <meta name="description" content="Editar seu prompt personalizado" />
         </Head>
 
         <Header />
 
         <main className="container-app py-10">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Criar Novo Prompt
+            Editar Prompt
           </h1>
 
           <div className="max-w-2xl mx-auto bg-white rounded-lg shadow p-6">
@@ -138,13 +195,22 @@ export default function CriarPrompt() {
                 </p>
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 disabled:opacity-50"
-              >
-                {loading ? 'Salvando...' : 'Salvar Prompt'}
-              </button>
+              <div className="flex justify-between">
+                <button
+                  type="button"
+                  onClick={() => router.push('/dashboard')}
+                  className="bg-gray-300 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-400 transition duration-300"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 disabled:opacity-50"
+                >
+                  {saving ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
             </form>
           </div>
         </main>
