@@ -29,6 +29,7 @@ export default function Explorar() {
             texto,
             categoria,
             created_at,
+            views,
             user_id,
             users:user_id (
               email
@@ -70,7 +71,10 @@ export default function Explorar() {
     carregarDados();
   }, [categoriaFiltro, termoBusca]);
 
-  const adicionarFavorito = async (promptId) => {
+  const adicionarFavorito = async (promptId, event) => {
+    // Impedir que o clique no botão de favorito leve à página de detalhes
+    event.stopPropagation();
+    
     if (!userId) {
       alert('Você precisa estar logado para adicionar favoritos');
       return;
@@ -97,7 +101,10 @@ export default function Explorar() {
     }
   };
 
-  const copiarParaClipboard = async (texto) => {
+  const copiarParaClipboard = async (texto, event) => {
+    // Impedir que o clique no botão de copiar leve à página de detalhes
+    event.stopPropagation();
+    
     try {
       await navigator.clipboard.writeText(texto);
       alert('Copiado para a área de transferência!');
@@ -176,42 +183,49 @@ export default function Explorar() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {prompts.map((prompt) => (
-              <div key={prompt.id} className="bg-white rounded-lg shadow p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
-                    {prompt.categoria}
-                  </span>
-                  {userId && (
-                    <button
-                      onClick={() => adicionarFavorito(prompt.id)}
-                      className={`${
-                        favoritos.includes(prompt.id)
-                          ? 'text-red-500'
-                          : 'text-gray-400 hover:text-red-500'
-                      }`}
-                    >
-                      ❤️
-                    </button>
-                  )}
+              <Link href={`/prompts/${prompt.id}`} key={prompt.id}>
+                <div className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow duration-300">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+                      {prompt.categoria}
+                    </span>
+                    {userId && (
+                      <button
+                        onClick={(e) => adicionarFavorito(prompt.id, e)}
+                        className={`${
+                          favoritos.includes(prompt.id)
+                            ? 'text-red-500'
+                            : 'text-gray-400 hover:text-red-500'
+                        }`}
+                      >
+                        ❤️
+                      </button>
+                    )}
+                  </div>
+                  <h3 className="font-semibold text-lg mb-2">{prompt.titulo}</h3>
+                  <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-gray-500">
+                      Por: {prompt.users?.email || 'Usuário anônimo'}
+                    </span>
+                    <div className="flex items-center space-x-3">
+                      <span className="text-xs text-gray-500">
+                        👁️ {prompt.views || 0}
+                      </span>
+                      <button
+                        onClick={(e) => copiarParaClipboard(prompt.texto, e)}
+                        className="text-indigo-600 hover:text-indigo-800"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <h3 className="font-semibold text-lg mb-2">{prompt.titulo}</h3>
-                <p className="text-gray-700 mb-4">{prompt.texto}</p>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500">
-                    Por: {prompt.users?.email || 'Usuário anônimo'}
-                  </span>
-                  <button
-                    onClick={() => copiarParaClipboard(prompt.texto)}
-                    className="text-indigo-600 hover:text-indigo-800"
-                  >
-                    Copiar
-                  </button>
-                </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
       </main>
     </div>
   );
-}git 
+}
