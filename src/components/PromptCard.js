@@ -119,6 +119,31 @@ export default function PromptCard({
         </div>
         <h3 className="font-semibold text-lg mb-2">{prompt.titulo}</h3>
         <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
+        
+        {/* Exibição de tags */}
+        {prompt.tags && prompt.tags.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {prompt.tags.slice(0, 3).map((tag, index) => (
+              <span 
+                key={index}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.location.href = `/busca?tags=${tag}`;
+                }}
+                className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full hover:bg-gray-200 cursor-pointer"
+              >
+                #{tag}
+              </span>
+            ))}
+            {prompt.tags.length > 3 && (
+              <span className="text-xs text-gray-500">
+                +{prompt.tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+        
         <div className="flex justify-between items-center">
           <div className="flex flex-col sm:flex-row sm:items-center text-xs text-gray-500">
             {showAuthor && prompt.users && (

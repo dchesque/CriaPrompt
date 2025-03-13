@@ -1,8 +1,9 @@
 import Head from 'next/head';
 import Header from '../components/Header';
 import AuthGuard from '../components/AuthGuard';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { supabase } from '../lib/supabaseClient';
 
 export default function CriarPrompt() {
   const router = useRouter();
@@ -12,6 +13,108 @@ export default function CriarPrompt() {
   const [isPublico, setIsPublico] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // Novos estados para as tags
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState('');
+  const [sugestoesTags, setSugestoesTags] = useState([]);
+  const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
+  const [templatePadrao, setTemplatePadrao] = useState('');
+
+  // Carregar template padrão das configurações do usuário
+  useEffect(() => {
+    const carregarConfiguracoes = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) return;
+        
+        const { data, error } = await supabase
+          .from('configuracoes')
+          .select('template_padrao')
+          .eq('user_id', session.user.id)
+          .single();
+          
+        if (error && error.code !== 'PGRST116') throw error;
+        
+        if (data && data.template_padrao) {
+          setTemplatePadrao(data.template_padrao);
+          setPrompt(data.template_padrao);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar configurações:', error);
+      }
+    };
+
+    carregarConfiguracoes();
+  }, []);
+
+  // Função para buscar sugestões de tags ao digitar
+  const buscarSugestoesTags = async (valor) => {
+    if (!valor.trim()) {
+      setSugestoesTags([]);
+      return;
+    }
+    
+    setCarregandoSugestoes(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('nome')
+        .ilike('nome', `${valor}%`)
+        .order('count', { ascending: false })
+        .limit(5);
+        
+      if (error) throw error;
+      
+      setSugestoesTags(data?.map(tag => tag.nome) || []);
+    } catch (error) {
+      console.error('Erro ao buscar sugestões de tags:', error);
+    } finally {
+      setCarregandoSugestoes(false);
+    }
+  };
+
+  // Atualizar sugestões ao digitar
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      buscarSugestoesTags(tagInput);
+    }, 300);
+    
+    return () => clearTimeout(handler);
+  }, [tagInput]);
+
+  // Adicionar tag
+  const adicionarTag = (tag) => {
+    const tagFormatada = tag.trim().toLowerCase();
+    
+    if (!tagFormatada || tags.includes(tagFormatada)) {
+      return;
+    }
+    
+    if (tags.length >= 5) {
+      alert('Você pode adicionar no máximo 5 tags');
+      return;
+    }
+    
+    setTags([...tags, tagFormatada]);
+    setTagInput('');
+    setSugestoesTags([]);
+  };
+
+  // Remover tag
+  const removerTag = (tagParaRemover) => {
+    setTags(tags.filter(tag => tag !== tagParaRemover));
+  };
+
+  // Lidar com tecla Enter no input de tags
+  const handleTagKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      adicionarTag(tagInput);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +132,7 @@ export default function CriarPrompt() {
           texto: prompt,
           categoria,
           publico: isPublico,
+          tags: tags, // Incluindo as tags no payload
         }),
       });
 
@@ -101,6 +205,66 @@ export default function CriarPrompt() {
                   <option value="academico">Acadêmico</option>
                   <option value="profissional">Profissional</option>
                 </select>
+              </div>
+
+              <div className="mb-4">
+                <label htmlFor="tags" className="block text-gray-700 mb-2">
+                  Tags (até 5)
+                </label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {tags.map((tag, index) => (
+                    <span 
+                      key={index} 
+                      className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-sm flex items-center"
+                    >
+                      {tag}
+                      <button 
+                        type="button"
+                        onClick={() => removerTag(tag)}
+                        className="ml-1 text-indigo-600 hover:text-indigo-800"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="relative">
+                  <input
+                    id="tags"
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={handleTagKeyDown}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Digite tags separadas por Enter"
+                  />
+                  {sugestoesTags.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+                      {sugestoesTags.map((sugestao, index) => (
+                        <div 
+                          key={index}
+                          className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+                          onClick={() => {
+                            adicionarTag(sugestao);
+                          }}
+                        >
+                          {sugestao}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {carregandoSugestoes && (
+                    <div className="absolute right-3 top-3">
+                      <svg className="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Pressione Enter para adicionar cada tag. Tags ajudam na descoberta do seu prompt.
+                </p>
               </div>
 
               <div className="mb-4">

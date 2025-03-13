@@ -14,6 +14,7 @@ export default function DetalhesPrompt() {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [isFavorito, setIsFavorito] = useState(false);
+  const [promptsRelacionados, setPromptsRelacionados] = useState([]);
 
   useEffect(() => {
     const carregarPrompt = async () => {
@@ -56,6 +57,29 @@ export default function DetalhesPrompt() {
 
           if (!favError && favData) {
             setIsFavorito(true);
+          }
+        }
+        
+        // Buscar prompts relacionados (se houver tags)
+        if (data.tags && data.tags.length > 0) {
+          // Buscar prompts com tags em comum
+          const { data: relacionados, error: relError } = await supabase
+            .from('prompts')
+            .select(`
+              id,
+              titulo,
+              categoria,
+              tags,
+              views
+            `)
+            .eq('publico', true)
+            .neq('id', id) // Excluir o prompt atual
+            .contains('tags', data.tags)
+            .order('views', { ascending: false })
+            .limit(3);
+            
+          if (!relError && relacionados?.length > 0) {
+            setPromptsRelacionados(relacionados);
           }
         }
       } catch (error) {
@@ -179,6 +203,22 @@ export default function DetalhesPrompt() {
                 <span>{new Date(prompt.created_at).toLocaleDateString()}</span>
               </div>
             </div>
+            
+            {/* Exibição de tags */}
+            {prompt.tags && prompt.tags.length > 0 && (
+              <div className="mb-6">
+                <p className="text-sm text-gray-700 mb-2">Tags:</p>
+                <div className="flex flex-wrap gap-2">
+                  {prompt.tags.map((tag, index) => (
+                    <Link href={`/busca?tags=${tag}`} key={index}>
+                      <span className="bg-gray-100 text-gray-800 px-2 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-200">
+                        #{tag}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="bg-gray-50 p-6 rounded-lg mb-6">
               <h2 className="text-lg font-semibold mb-3">Prompt:</h2>
@@ -187,7 +227,15 @@ export default function DetalhesPrompt() {
 
             <div className="flex justify-between items-center">
               <div className="text-sm text-gray-600">
-                Criado por: <span className="font-medium">{prompt.users?.email || 'Usuário anônimo'}</span>
+                Criado por: {prompt.users?.email ? (
+                  <Link href={`/usuarios/${prompt.user_id}`}>
+                    <span className="font-medium text-indigo-600 hover:text-indigo-800 cursor-pointer">
+                      {prompt.users.email}
+                    </span>
+                  </Link>
+                ) : (
+                  <span className="font-medium">Usuário anônimo</span>
+                )}
               </div>
               <div className="flex space-x-3">
                 <button
@@ -205,6 +253,35 @@ export default function DetalhesPrompt() {
                 )}
               </div>
             </div>
+            
+            {/* Prompts relacionados */}
+            {promptsRelacionados.length > 0 && (
+              <div className="mt-10 border-t pt-6">
+                <h2 className="text-xl font-semibold mb-4">Prompts Relacionados</h2>
+                <div className="grid gap-4 md:grid-cols-3">
+                  {promptsRelacionados.map(p => (
+                    <Link href={`/prompts/${p.id}`} key={p.id}>
+                      <div className="bg-gray-50 rounded-lg p-4 cursor-pointer hover:shadow-md transition-shadow">
+                        <h3 className="font-medium text-indigo-600 mb-2 line-clamp-2">{p.titulo}</h3>
+                        <div className="flex justify-between items-center text-xs text-gray-500">
+                          <span>{p.categoria}</span>
+                          <span>👁️ {p.views || 0}</span>
+                        </div>
+                        {p.tags && p.tags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {p.tags.filter(tag => prompt.tags.includes(tag)).slice(0, 3).map((tag, i) => (
+                              <span key={i} className="bg-gray-200 px-1.5 py-0.5 rounded-full text-xs">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </main>

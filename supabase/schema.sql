@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS public.prompts (
     publico BOOLEAN DEFAULT true,
     views INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    tags TEXT[] DEFAULT '{}'::TEXT[]
 );
 
 -- Tabela de favoritos
@@ -47,11 +48,20 @@ CREATE TABLE IF NOT EXISTS public.configuracoes (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Tabela de tags (nova)
+CREATE TABLE IF NOT EXISTS public.tags (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nome TEXT NOT NULL UNIQUE,
+    count INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Habilitar RLS em todas as tabelas
 ALTER TABLE public.prompts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.favoritos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.perfis ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.configuracoes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
 
 -- Políticas RLS
 
@@ -96,6 +106,13 @@ CREATE POLICY "Usuários podem gerenciar seus próprios perfis" ON public.perfis
 CREATE POLICY "Usuários podem gerenciar suas próprias configurações" ON public.configuracoes
     FOR ALL USING (auth.uid() = user_id);
 
+-- Tags: políticas
+CREATE POLICY "Tags são visíveis para todos" ON public.tags
+    FOR SELECT USING (true);
+
+CREATE POLICY "Usuários autenticados podem criar tags" ON public.tags
+    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
 -- Funções
 
 -- Incrementar visualizações
@@ -107,6 +124,62 @@ BEGIN
     WHERE id = prompt_id AND (publico = true OR user_id = auth.uid());
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Atualizar contador de tags
+CREATE OR REPLACE FUNCTION update_tag_count()
+RETURNS TRIGGER AS $$
+DECLARE
+    tag_name TEXT;
+BEGIN
+    -- Se uma tag foi adicionada
+    IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
+        -- Para cada tag no array
+        FOREACH tag_name IN ARRAY NEW.tags
+        LOOP
+            -- Inserir ou atualizar a contagem
+            INSERT INTO public.tags (nome, count)
+            VALUES (tag_name, 1)
+            ON CONFLICT (nome) 
+            DO UPDATE SET count = tags.count + 1;
+        END LOOP;
+    END IF;
+    
+    -- Se uma tag foi removida (no caso de UPDATE)
+    IF TG_OP = 'UPDATE' THEN
+        -- Para cada tag no array antigo que não está no novo
+        FOREACH tag_name IN ARRAY (
+            SELECT unnest(OLD.tags) 
+            EXCEPT 
+            SELECT unnest(NEW.tags)
+        )
+        LOOP
+            -- Decrementar contagem
+            UPDATE public.tags
+            SET count = GREATEST(0, count - 1)
+            WHERE nome = tag_name;
+        END LOOP;
+    END IF;
+    
+    -- Se o prompt foi excluído
+    IF TG_OP = 'DELETE' THEN
+        -- Para cada tag no array
+        FOREACH tag_name IN ARRAY OLD.tags
+        LOOP
+            -- Decrementar contagem
+            UPDATE public.tags
+            SET count = GREATEST(0, count - 1)
+            WHERE nome = tag_name;
+        END LOOP;
+    END IF;
+    
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger para atualizar contagens de tags
+CREATE TRIGGER prompt_tags_trigger
+AFTER INSERT OR UPDATE OR DELETE ON public.prompts
+FOR EACH ROW EXECUTE FUNCTION update_tag_count();
 
 -- Excluir conta de usuário
 CREATE OR REPLACE FUNCTION public.delete_user()
