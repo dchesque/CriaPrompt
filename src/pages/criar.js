@@ -1,9 +1,7 @@
-// src/pages/criar.js
 import Head from 'next/head';
 import Header from '../components/Header';
 import AuthGuard from '../components/AuthGuard';
 import { useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
 import { useRouter } from 'next/router';
 
 export default function CriarPrompt() {
@@ -21,33 +19,30 @@ export default function CriarPrompt() {
     setError(null);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        router.push('/auth/login');
-        return;
+      const response = await fetch('/api/prompts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          titulo,
+          texto: prompt,
+          categoria,
+          publico: isPublico,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao criar prompt');
       }
-
-      const { data, error } = await supabase
-        .from('prompts')
-        .insert([
-          { 
-            titulo, 
-            texto: prompt, 
-            categoria, 
-            publico: isPublico, 
-            user_id: session.user.id 
-          }
-        ])
-        .select();
-
-      if (error) throw error;
 
       alert('Prompt criado com sucesso!');
       router.push('/dashboard');
     } catch (error) {
       console.error('Erro:', error);
-      setError('Falha ao criar o prompt. Por favor, tente novamente.');
+      setError(error.message || 'Falha ao criar o prompt. Por favor, tente novamente.');
     } finally {
       setLoading(false);
     }
