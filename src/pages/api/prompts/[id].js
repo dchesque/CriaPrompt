@@ -9,7 +9,9 @@ export default async function handler(req, res) {
   }
 
   // Obter sessão do usuário
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession({
+    req: req
+  });
   
   // Prompt por ID (GET)
   if (req.method === 'GET') {
@@ -25,9 +27,7 @@ export default async function handler(req, res) {
           categoria,
           publico,
           views,
-          tags,
           created_at,
-          updated_at,
           users:user_id (
             email
           )
@@ -64,9 +64,9 @@ export default async function handler(req, res) {
 
   // Atualizar prompt (PUT)
   if (req.method === 'PUT') {
-    const { titulo, texto, categoria, publico, tags } = req.body;
+    const { titulo, texto, categoria, publico } = req.body;
 
-    if (!titulo && !texto && categoria === undefined && publico === undefined && tags === undefined) {
+    if (!titulo && !texto && categoria === undefined && publico === undefined) {
       return res.status(400).json({ error: 'Nenhum campo fornecido para atualização' });
     }
 
@@ -97,23 +97,6 @@ export default async function handler(req, res) {
       if (texto !== undefined) dadosAtualizacao.texto = texto;
       if (categoria !== undefined) dadosAtualizacao.categoria = categoria;
       if (publico !== undefined) dadosAtualizacao.publico = publico;
-      
-      // Processar tags se fornecidas
-      if (tags !== undefined) {
-        // Validar e formatar tags
-        const tagsFormatadas = Array.isArray(tags) 
-          ? tags.map(tag => tag.trim().toLowerCase()).filter(tag => tag.length > 0)
-          : [];
-        
-        // Limitar a 5 tags
-        if (tagsFormatadas.length > 5) {
-          return res.status(400).json({ error: 'Máximo de 5 tags permitidas' });
-        }
-        
-        dadosAtualizacao.tags = tagsFormatadas;
-      }
-      
-      dadosAtualizacao.updated_at = new Date().toISOString();
 
       // Atualizar prompt
       const { data, error: updateError } = await supabase

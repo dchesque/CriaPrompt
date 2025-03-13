@@ -2,7 +2,9 @@ import { supabase } from '../../lib/supabaseClient';
 
 export default async function handler(req, res) {
   // Obter sessão do usuário
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await supabase.auth.getSession({
+    req: req
+  });
   
   if (!session) {
     return res.status(401).json({ error: 'Não autorizado' });
@@ -12,7 +14,7 @@ export default async function handler(req, res) {
 
   // GET: Listar prompts (com filtros)
   if (req.method === 'GET') {
-    const { publico, categoria, termo, tags, limit = 50, meusPosts } = req.query;
+    const { publico, categoria, termo, limit = 50, meusPosts } = req.query;
     
     try {
       let query = supabase
@@ -24,9 +26,7 @@ export default async function handler(req, res) {
           categoria,
           publico,
           views,
-          tags,
           created_at,
-          updated_at,
           user_id,
           users:user_id (
             email
@@ -54,18 +54,12 @@ export default async function handler(req, res) {
       if (termo) {
         query = query.or(`titulo.ilike.%${termo}%,texto.ilike.%${termo}%`);
       }
-      
-      // Filtrar por tags se fornecidas
-      if (tags) {
-        const tagsArray = tags.split(',').map(tag => tag.trim().toLowerCase());
-        query = query.contains('tags', tagsArray);
-      }
 
       const { data, error } = await query;
 
       if (error) throw error;
 
-      return res.status(200).json(data);
+      return res.status(200).json(data || []);
     } catch (error) {
       console.error('Erro ao buscar prompts:', error);
       return res.status(500).json({ error: error.message });
@@ -74,20 +68,10 @@ export default async function handler(req, res) {
 
   // POST: Criar novo prompt
   if (req.method === 'POST') {
-    const { titulo, texto, categoria, publico, tags = [] } = req.body;
+    const { titulo, texto, categoria, publico } = req.body;
     
     if (!titulo || !texto) {
       return res.status(400).json({ error: 'Título e texto são obrigatórios' });
-    }
-    
-    // Validar e formatar tags
-    const tagsFormatadas = Array.isArray(tags) 
-      ? tags.map(tag => tag.trim().toLowerCase()).filter(tag => tag.length > 0)
-      : [];
-    
-    // Limitar a 5 tags
-    if (tagsFormatadas.length > 5) {
-      return res.status(400).json({ error: 'Máximo de 5 tags permitidas' });
     }
 
     try {
@@ -100,8 +84,7 @@ export default async function handler(req, res) {
             categoria: categoria || 'geral', 
             publico: publico !== false, 
             user_id: userId,
-            views: 0,
-            tags: tagsFormatadas
+            views: 0
           }
         ])
         .select();

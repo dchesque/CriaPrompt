@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     totalPrompts: 0,
     publicPrompts: 0,
@@ -27,57 +28,100 @@ export default function Dashboard() {
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session) {
-          router.push('/auth/login');
+          console.log('Sem sessão, redirecionando para login');
+          router.push('/auth/login?redirect=/dashboard');
           return;
         }
         
         setUser(session.user);
         
-        // Carregar prompts do usuário via API
-        const response = await fetch('/api/prompts?meusPosts=true');
-        
-        if (!response.ok) {
-          throw new Error('Erro ao carregar prompts');
-        }
-        
-        const data = await response.json();
-        setPrompts(data || []);
-        
-        // Calcular estatísticas
-        const totalPrompts = data.length;
-        const publicPrompts = data.filter(p => p.publico).length;
-        const privatePrompts = totalPrompts - publicPrompts;
-        const totalViews = data.reduce((sum, prompt) => sum + (prompt.views || 0), 0);
-        
-        // Contar categorias usadas
-        const categorias = {};
-        data.forEach(prompt => {
-          categorias[prompt.categoria] = (categorias[prompt.categoria] || 0) + 1;
-        });
-        
-        const categoriasUsadas = Object.entries(categorias).map(([nome, count]) => ({
-          nome,
-          count
-        })).sort((a, b) => b.count - a.count);
-        
-        // Buscar contagem de favoritos
-        const { count: favoritosCount, error: favError } = await supabase
-          .from('favoritos')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', session.user.id);
+        // Tentar usar a API direta do Supabase se a API falhar
+        try {
+          // Primeiro método: via API customizada
+          console.log('Tentando buscar dados do dashboard via API...');
+          const response = await fetch('/api/dashboard-data', {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`
+            },
+            credentials: 'include'
+          });
           
-        if (favError) throw favError;
-        
-        setStats({
-          totalPrompts,
-          publicPrompts,
-          privatePrompts,
-          totalViews,
-          favoritos: favoritosCount || 0,
-          categoriasUsadas
-        });
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Dados do dashboard carregados via API');
+            
+            // Definir os dados
+            setPrompts(data.prompts || []);
+            setStats(data.stats);
+            return;
+          }
+          
+          // Se chegou aqui, a API falhou
+          const errorText = await response.text().catch(() => 'Erro desconhecido');
+          console.error('Erro na resposta da API:', response.status, errorText);
+          throw new Error(`Erro ao carregar dados do dashboard: ${response.status}`);
+        } catch (apiError) {
+          console.error('Falha na API, usando Supabase diretamente:', apiError);
+          
+          // Método alternativo: usar o Supabase diretamente
+          // 1. Buscar prompts do usuário
+          const { data: promptsData, error: promptsError } = await supabase
+            .from('prompts')
+            .select(`
+              id,
+              titulo,
+              texto,
+              categoria,
+              publico,
+              views,
+              created_at
+            `)
+            .eq('user_id', session.user.id)
+            .order('created_at', { ascending: false });
+          
+          if (promptsError) throw promptsError;
+          setPrompts(promptsData || []);
+          
+          // 2. Buscar contagem de favoritos
+          const { count: favoritosCount, error: favoritosError } = await supabase
+            .from('favoritos')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', session.user.id);
+          
+          if (favoritosError) throw favoritosError;
+          
+          // 3. Calcular estatísticas
+          const totalPrompts = promptsData.length;
+          const publicPrompts = promptsData.filter(p => p.publico).length;
+          const privatePrompts = totalPrompts - publicPrompts;
+          const totalViews = promptsData.reduce((sum, prompt) => sum + (prompt.views || 0), 0);
+          
+          // 4. Contar categorias usadas
+          const categorias = {};
+          promptsData.forEach(prompt => {
+            const categoria = prompt.categoria || 'geral';
+            categorias[categoria] = (categorias[categoria] || 0) + 1;
+          });
+          
+          const categoriasUsadas = Object.entries(categorias)
+            .map(([nome, count]) => ({ nome, count }))
+            .sort((a, b) => b.count - a.count);
+          
+          // 5. Atualizar o estado com os dados coletados
+          setStats({
+            totalPrompts,
+            publicPrompts,
+            privatePrompts,
+            totalViews,
+            favoritos: favoritosCount || 0,
+            categoriasUsadas
+          });
+          
+          console.log('Dados carregados diretamente do Supabase');
+        }
       } catch (error) {
         console.error('Erro ao carregar dados do dashboard:', error);
+        setError(error.message || 'Ocorreu um erro ao carregar seus dados');
       } finally {
         setLoading(false);
       }
@@ -96,14 +140,21 @@ export default function Dashboard() {
     }
 
     try {
-      const response = await fetch(`/api/prompts/${promptId}`, {
-        method: 'DELETE',
-      });
+      // Obter a sessão atual para pegar o token de acesso
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Erro ao excluir prompt');
+      if (!session) {
+        throw new Error('Sessão expirada. Faça login novamente.');
       }
+      
+      // Tentar excluir diretamente pelo Supabase
+      const { error } = await supabase
+        .from('prompts')
+        .delete()
+        .eq('id', promptId)
+        .eq('user_id', session.user.id);
+      
+      if (error) throw error;
 
       // Atualizar a lista de prompts removendo o excluído
       setPrompts(prompts.filter(p => p.id !== promptId));
@@ -126,19 +177,6 @@ export default function Dashboard() {
     }
   };
 
-  if (loading) {
-    return (
-      <AuthGuard>
-        <div className="min-h-screen bg-gray-100">
-          <Header />
-          <main className="container-app py-10">
-            <p className="text-center">Carregando...</p>
-          </main>
-        </div>
-      </AuthGuard>
-    );
-  }
-
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-100">
@@ -150,9 +188,22 @@ export default function Dashboard() {
         <Header />
 
         <main className="container-app py-10">
-          <h1 className="text-3xl font-bold text-gray-800 mb-8">
+          <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
             Seu Dashboard
           </h1>
+
+          {error && (
+            <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">
+              <p className="font-medium">Ocorreu um erro:</p>
+              <p>{error}</p>
+              <button 
+                onClick={() => window.location.reload()}
+                className="mt-2 text-sm text-red-700 underline"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
 
           <div className="bg-white rounded-lg shadow p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Bem-vindo, {user?.email}</h2>
@@ -181,7 +232,7 @@ export default function Dashboard() {
               </div>
             </div>
             
-            {stats.categoriasUsadas.length > 0 && (
+            {stats.categoriasUsadas?.length > 0 && (
               <div className="mb-6">
                 <h3 className="text-md font-semibold mb-2">Suas categorias mais usadas:</h3>
                 <div className="flex flex-wrap gap-2">
@@ -221,7 +272,12 @@ export default function Dashboard() {
               )}
             </div>
             
-            {prompts.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-10">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+                <p className="mt-2">Carregando seus prompts...</p>
+              </div>
+            ) : prompts.length === 0 ? (
               <div className="bg-white rounded-lg shadow p-6 text-center">
                 <p className="text-gray-600 mb-4">
                   Você ainda não criou nenhum prompt.
