@@ -58,32 +58,50 @@ export default function CriarPrompt() {
   };
 
   // Carregar template padrão das configurações do usuário
-  useEffect(() => {
-    const carregarConfiguracoes = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
+useEffect(() => {
+  const carregarConfiguracoes = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) return;
+      
+      // Verificar primeiro se a tabela existe
+      const { error: tableError } = await supabase
+        .from('configuracoes')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
         
-        if (!session) return;
+      // Se ocorrer um erro que indica que a tabela não existe, apenas retorne
+      if (tableError && tableError.code === '42P01') {
+        console.log('Tabela de configurações não existe ainda');
+        return;
+      }
+      
+      const { data, error } = await supabase
+        .from('configuracoes')
+        .select('template_padrao')
+        .eq('user_id', session.user.id)
+        .single();
         
-        const { data, error } = await supabase
-          .from('configuracoes')
-          .select('template_padrao')
-          .eq('user_id', session.user.id)
-          .single();
-          
-        if (error && error.code !== 'PGRST116') throw error;
-        
-        if (data && data.template_padrao) {
-          setTemplatePadrao(data.template_padrao);
-          setPrompt(data.template_padrao);
-        }
-      } catch (error) {
+      if (error && error.code !== 'PGRST116') throw error;
+      
+      if (data && data.template_padrao) {
+        setTemplatePadrao(data.template_padrao);
+        setPrompt(data.template_padrao);
+      }
+    } catch (error) {
+      // Se for erro de tabela não existente, apenas log sem mostrar erro ao usuário
+      if (error.code === '42P01') {
+        console.log('Tabela de configurações não existe ainda');
+      } else {
         console.error('Erro ao carregar configurações:', error);
       }
-    };
+    }
+  };
 
-    carregarConfiguracoes();
-  }, []);
+  carregarConfiguracoes();
+}, []);
 
   // Função para buscar sugestões de tags ao digitar
   const buscarSugestoesTags = async (valor) => {
@@ -234,46 +252,45 @@ export default function CriarPrompt() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
+  
     try {
-      if (!titulo.trim()) {
-        throw new Error('O título é obrigatório');
+      // Verificar autenticação
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log("Usuário autenticado:", user ? "Sim" : "Não");
+      
+      if (!user) {
+        throw new Error("Você precisa estar logado para criar um prompt");
       }
       
-      if (!prompt.trim()) {
-        throw new Error('O texto do prompt é obrigatório');
+      console.log("ID do usuário:", user.id);
+      
+      // Inserir diretamente via Supabase
+      const { data, error } = await supabase
+        .from('prompts')
+        .insert({
+          titulo: titulo,
+          texto: prompt,
+          categoria: categoria,
+          publico: isPublico,
+          user_id: user.id,
+          views: 0,
+          tags: tags || [],
+          campos_personalizados: camposPersonalizados.length > 0 ? camposPersonalizados : null
+        });
+      
+      if (error) {
+        console.error("Erro Supabase:", error);
+        throw new Error(error.message);
       }
       
-      // Preparar os dados para o envio
-      const promptData = {
-        titulo,
-        texto: prompt,
-        categoria,
-        publico: isPublico,
-        tags: tags,
-        campos_personalizados: camposPersonalizados.length > 0 ? camposPersonalizados : null
-      };
-      
-      const response = await fetch('/api/prompts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(promptData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao criar prompt');
-      }
-
-      toast.success('Prompt criado com sucesso!');
-      router.push('/dashboard');
+      toast.success("Prompt criado com sucesso!");
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 1000);
     } catch (error) {
       console.error('Erro:', error);
-      setError(error.message || 'Falha ao criar o prompt. Por favor, tente novamente.');
-      toast.error(error.message || 'Falha ao criar o prompt');
+      setError(error.message);
+      toast.error(error.message);
     } finally {
       setLoading(false);
     }

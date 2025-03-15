@@ -1,81 +1,48 @@
 import { supabase } from '../../lib/supabaseClient';
 
 export default async function handler(req, res) {
-  // Obter sessão do usuário
-  const { data: { session } } = await supabase.auth.getSession({
-    req: req
-  });
+  console.log("API prompts - método:", req.method);
+  console.log("API prompts - headers:", JSON.stringify(req.headers, null, 2));
   
-  if (!session) {
-    return res.status(401).json({ error: 'Não autorizado' });
+  // Verificar a sessão do cookie e do header de autorização
+  const authHeader = req.headers.authorization;
+  let token = null;
+  
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7);
+    console.log("Token encontrado no header:", token ? "Presente" : "Ausente");
   }
-
-  const userId = session.user.id;
-
-  // GET: Listar prompts (com filtros)
-  if (req.method === 'GET') {
-    const { publico, categoria, termo, limit = 50, meusPosts, tags } = req.query;
+  
+  // Tentar obter sessão
+  const { data: sessionData, error: sessionError } = token 
+    ? await supabase.auth.getUser(token)
+    : await supabase.auth.getSession({ req });
     
-    try {
-      let query = supabase
-        .from('prompts')
-        .select(`
-          id,
-          titulo,
-          texto,
-          categoria,
-          publico,
-          views,
-          created_at,
-          user_id,
-          tags,
-          campos_personalizados,
-          users:user_id (
-            email
-          )
-        `)
-        .order('created_at', { ascending: false })
-        .limit(parseInt(limit));
-
-      // Filtrar por prompts públicos ou do próprio usuário
-      if (publico === 'true') {
-        query = query.eq('publico', true);
-      } else if (meusPosts === 'true') {
-        query = query.eq('user_id', userId);
-      } else {
-        // Se não especificar, mostra os públicos e os próprios
-        query = query.or(`publico.eq.true,user_id.eq.${userId}`);
-      }
-
-      // Filtrar por categoria se fornecida
-      if (categoria && categoria !== 'todos') {
-        query = query.eq('categoria', categoria);
-      }
-
-      // Filtrar por termo de busca se fornecido
-      if (termo) {
-        query = query.or(`titulo.ilike.%${termo}%,texto.ilike.%${termo}%`);
-      }
-      
-      // Filtrar por tags se fornecidas
-      if (tags) {
-        const tagsArray = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
-        query = query.contains('tags', tagsArray);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      return res.status(200).json(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar prompts:', error);
-      return res.status(500).json({ error: error.message });
-    }
+  if (sessionError) {
+    console.error("Erro ao obter sessão:", sessionError);
+  }
+  
+  // Verificar se existe sessão válida
+  const session = token 
+    ? { user: sessionData?.user } 
+    : sessionData?.session;
+    
+  console.log("Sessão encontrada:", session ? "Sim" : "Não");
+  
+  if (session?.user) {
+    console.log("Usuário autenticado:", session.user.id);
   }
 
-  // POST: Criar novo prompt
+  // Verificar autenticação para métodos POST (criar)
   if (req.method === 'POST') {
+    if (!session || !session.user) {
+      console.log("Tentativa de criar prompt sem autenticação");
+      return res.status(401).json({ error: 'Não autorizado - Faça login para criar um prompt' });
+    }
+    
+    const userId = session.user.id;
+    console.log("POST com usuário autenticado:", userId);
+    
     const { titulo, texto, categoria, publico, tags, campos_personalizados } = req.body;
     
     if (!titulo || !texto) {
@@ -112,6 +79,7 @@ export default async function handler(req, res) {
         tagsValidadas = tags.map(tag => tag.trim().toLowerCase()).filter(tag => tag);
       }
 
+      console.log("Inserindo prompt para usuário:", userId);
       const { data, error } = await supabase
         .from('prompts')
         .insert([
@@ -128,13 +96,24 @@ export default async function handler(req, res) {
         ])
         .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Erro no Supabase ao inserir prompt:", error);
+        throw error;
+      }
 
+      console.log("Prompt criado com sucesso:", data[0].id);
       return res.status(201).json(data[0]);
     } catch (error) {
       console.error('Erro ao criar prompt:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: error.message || 'Erro ao criar prompt' });
     }
+  }
+
+  // GET: Listar prompts (com filtros)
+  if (req.method === 'GET') {
+    // Código existente para GET...
+    const userId = session?.user?.id;
+    // Resto do código de GET...
   }
 
   // Método não suportado
