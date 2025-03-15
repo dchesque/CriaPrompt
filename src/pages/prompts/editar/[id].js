@@ -233,14 +233,18 @@ export default function EditarPrompt() {
       return;
     }
     
-    setCamposPersonalizados([
+    // CORREÇÃO: Adicionar explicitamente o novo campo ao array existente
+    const novosCampos = [
       ...camposPersonalizados,
       {
         nome: nomeCampo,
         descricao: novoCampoDescricao.trim() || `Campo ${nomeCampo}`,
         valorPadrao: novoCampoValorPadrao.trim()
       }
-    ]);
+    ];
+    
+    setCamposPersonalizados(novosCampos);
+    console.log("Campos atualizados:", novosCampos); // Adicionar log para debug
     
     // Adicionar o campo ao texto do prompt
     if (!prompt.includes(`#${nomeCampo}`)) {
@@ -257,15 +261,9 @@ export default function EditarPrompt() {
   // Remover campo personalizado
   const removerCampoPersonalizado = (index) => {
     const campoRemovido = camposPersonalizados[index];
-    setCamposPersonalizados(camposPersonalizados.filter((_, i) => i !== index));
-    
-    // Opcionalmente, remover os placeholders deste campo do texto do prompt
-    // (descomentado porque pode ser que o usuário queira manter o texto)
-    /*
-    if (campoRemovido) {
-      setPrompt(prompt.replace(new RegExp(`#${campoRemovido.nome}`, 'g'), ''));
-    }
-    */
+    const novosCampos = camposPersonalizados.filter((_, i) => i !== index);
+    setCamposPersonalizados(novosCampos);
+    console.log("Campos após remoção:", novosCampos); // Adicionar log para debug
   };
   
   // Inserir campo no prompt
@@ -296,119 +294,90 @@ export default function EditarPrompt() {
     });
   };
 
-  // src/pages/prompts/editar/[id].js
-
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSaving(true);
-  setError(null);
-
-  try {
-    // Validações básicas
-    if (!titulo.trim()) {
-      throw new Error('O título é obrigatório');
-    }
-    
-    if (!prompt.trim()) {
-      throw new Error('O texto do prompt é obrigatório');
-    }
-
-    // Obter token de autenticação atual
-    const { data: sessionData } = await supabase.auth.getSession();
-    
-    if (!sessionData?.session) {
-      // Se não tivermos uma sessão válida, tentamos atualizar o token
-      const { data: refreshData } = await supabase.auth.refreshSession();
+  // Função de envio do formulário com as correções
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+  
+    try {
+      // Obter a sessão atual para pegar o token de acesso
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!refreshData?.session) {
-        toast.error("Sessão expirada. Faça login novamente.");
-        router.push('/auth/login');
-        setSaving(false);
-        return;
+      if (!session) {
+        throw new Error('Sessão expirada. Faça login novamente.');
       }
-    }
-    
-    // Obter o token atualizado após verificar/atualizar a sessão
-    const { data: sessionDataFinal } = await supabase.auth.getSession();
-    
-    if (!sessionDataFinal?.session) {
-      toast.error("Não foi possível autenticar. Faça login novamente.");
-      router.push('/auth/login');
-      setSaving(false);
-      return;
-    }
-    
-    const token = sessionDataFinal.session.access_token;
-    console.log("Token obtido:", token ? "Presente" : "Ausente");
-    
-    // Preparar dados para a API
-    const promptData = {
-      titulo: titulo.trim(),
-      texto: prompt.trim(),
-      categoria,
-      publico: isPublico,
-      tags: Array.isArray(tags) ? tags : [],
-      campos_personalizados: camposPersonalizados.length > 0 
-        ? camposPersonalizados.map(campo => ({
-            nome: campo.nome,
-            descricao: campo.descricao || '',
-            valorPadrao: campo.valorPadrao || ''
-          }))
-        : null
-    };
-    
-    console.log("Enviando dados para atualização:", { id, ...promptData });
-    
-    // Fazer a requisição para a API
-    const response = await fetch(`/api/prompts/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(promptData)
-    });
-    
-    // Verificar o status da resposta
-    if (response.status === 401) {
-      // Se o erro for de autorização, redirecionar para login
-      toast.error("Sessão expirada. Faça login novamente.");
+  
+      const token = session.access_token;
+  
+      const response = await fetch(`/api/prompts/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // Adicionar token de autorização
+        },
+        body: JSON.stringify({
+          titulo,
+          texto: prompt,
+          categoria,
+          publico: isPublico,
+          tags: tags,
+          campos_personalizados: camposPersonalizados
+        }),
+      });
+  
+      // Log da resposta completa
+      console.log('Resposta da API:', {
+        status: response.status,
+        statusText: response.statusText
+      });
+  
+      const responseData = await response.json();
+  
+      // Log dos dados da resposta
+      console.log('Dados da resposta:', responseData);
+  
+      if (!response.ok) {
+        console.error("Erro na resposta da API:", response.status, responseData);
+        
+        // Se for erro de autorização, redirecionar para login
+        if (response.status === 401) {
+          toast.error('Sessão expirada. Faça login novamente.');
+          setTimeout(() => {
+            router.push('/auth/login');
+          }, 1500);
+          return;
+        }
+  
+        throw new Error(responseData.error || 'Erro ao atualizar prompt');
+      }
+  
+      // Verificação adicional dos dados retornados
+      if (!responseData || !responseData.id) {
+        console.error('Resposta da API não contém dados válidos', responseData);
+        throw new Error('Não foi possível atualizar o prompt');
+      }
+  
+      toast.success('Prompt atualizado com sucesso!');
       setTimeout(() => {
-        router.push('/auth/login');
+        router.push('/dashboard');
       }, 1500);
-      return;
+    } catch (error) {
+      console.error('Erro completo ao atualizar prompt:', error);
+      
+      // Verificar se é um erro de sessão expirada
+      if (error.message.includes('sessão')) {
+        toast.error('Sessão expirada. Faça login novamente.');
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 1500);
+      } else {
+        setError(error.message || 'Falha ao atualizar o prompt. Por favor, tente novamente.');
+      }
+    } finally {
+      setSaving(false);
     }
-    
-    // Tentar obter a resposta como JSON
-    const contentType = response.headers.get("content-type");
-    let responseData;
-    
-    if (contentType && contentType.indexOf("application/json") !== -1) {
-      responseData = await response.json();
-    } else {
-      // Se não for JSON, obter o texto da resposta
-      const text = await response.text();
-      console.error("Resposta não-JSON recebida:", text);
-      throw new Error('Resposta inesperada do servidor');
-    }
-    
-    if (!response.ok) {
-      console.error("Erro na resposta da API:", response.status, responseData);
-      throw new Error(responseData.error || 'Erro ao atualizar prompt');
-    }
-
-    toast.success('Prompt atualizado com sucesso!');
-    setTimeout(() => {
-      router.push('/dashboard');
-    }, 1500);
-  } catch (error) {
-    console.error('Erro ao atualizar prompt:', error);
-    setError(error.message || 'Falha ao atualizar o prompt. Por favor, tente novamente.');
-    toast.error(error.message || 'Falha ao atualizar o prompt');
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   return (
     <AuthGuard>

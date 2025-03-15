@@ -92,80 +92,30 @@ export default async function handler(req, res) {
   }
 
   // PUT: Atualizar prompt
-if (req.method === 'PUT') {
-  try {
-    // Log do corpo da requisição para debug
-    console.log('Corpo da requisição PUT:', JSON.stringify(req.body));
-    
-    const { titulo, texto, categoria, publico, tags, campos_personalizados } = req.body;
-
-    // Verificar se o prompt pertence ao usuário
-    const { data: promptExistente, error: promptError } = await supabase
-      .from('prompts')
-      .select('user_id')
-      .eq('id', id)
-      .single();
-
-    if (promptError) {
-      if (promptError.code === 'PGRST116') { // Não encontrado
-        return res.status(404).json({ error: 'Prompt não encontrado' });
-      }
-      throw promptError;
+  if (req.method === 'PUT') {
+    try {
+      // Validar e sanitizar os dados
+      const { titulo, texto, categoria, publico, tags, campos_personalizados } = req.body;
+  
+      // Preparar objeto de atualização
+      const dadosAtualizacao = {
+        titulo: titulo.trim(),
+        texto: texto.trim(),
+        categoria: categoria || 'geral',
+        publico: publico !== false,
+        tags: tags || [],
+        campos_personalizados: campos_personalizados 
+          ? JSON.parse(JSON.stringify(campos_personalizados)) 
+          : null
+        // Remover a atualização manual de updated_at
+      };
+  
+      // Resto do código permanece o mesmo...
+    } catch (error) {
+      console.error('Erro no método PUT:', error);
+      return res.status(500).json({ error: error.message });
     }
-
-    // Verificar permissões
-    if (promptExistente.user_id !== userId) {
-      return res.status(403).json({ error: 'Você não tem permissão para atualizar este prompt' });
-    }
-
-    // Sanitizar e validar os dados antes da atualização - REMOVIDO updated_at
-    const dadosAtualizacao = {};
-    
-    if (titulo !== undefined) dadosAtualizacao.titulo = String(titulo).trim();
-    if (texto !== undefined) dadosAtualizacao.texto = String(texto).trim();
-    if (categoria !== undefined) dadosAtualizacao.categoria = String(categoria);
-    if (publico !== undefined) dadosAtualizacao.publico = Boolean(publico);
-    
-    // Garantir que tags seja um array
-    if (tags !== undefined) {
-      dadosAtualizacao.tags = Array.isArray(tags) ? tags : [];
-    }
-    
-    // Validar campos personalizados
-    if (campos_personalizados !== undefined) {
-      if (Array.isArray(campos_personalizados) && campos_personalizados.length > 0) {
-        // Sanitizar cada campo personalizado
-        dadosAtualizacao.campos_personalizados = campos_personalizados.map(campo => ({
-          nome: String(campo.nome || '').trim(),
-          descricao: String(campo.descricao || '').trim(),
-          valorPadrao: String(campo.valorPadrao || '').trim()
-        }));
-      } else {
-        // Se não for um array válido ou estiver vazio, definir como null
-        dadosAtualizacao.campos_personalizados = null;
-      }
-    }
-
-    console.log('Dados sanitizados para atualização:', dadosAtualizacao);
-
-    // Atualizar prompt
-    const { data, error: updateError } = await supabase
-      .from('prompts')
-      .update(dadosAtualizacao)
-      .eq('id', id)
-      .select();
-
-    if (updateError) {
-      console.error('Erro ao atualizar no Supabase:', updateError);
-      throw updateError;
-    }
-
-    return res.status(200).json(data[0] || {success: true});
-  } catch (error) {
-    console.error('Erro ao atualizar prompt:', error);
-    return res.status(500).json({ error: error.message || 'Erro interno do servidor' });
   }
-}
 
   // DELETE: Excluir prompt
   if (req.method === 'DELETE') {

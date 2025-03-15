@@ -10,8 +10,9 @@ CREATE TABLE IF NOT EXISTS public.prompts (
     publico BOOLEAN DEFAULT true,
     views INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    tags TEXT[] DEFAULT '{}'::TEXT[]
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- Garantir que esta coluna exista
+    tags TEXT[] DEFAULT '{}'::TEXT[],
+    campos_personalizados JSONB
 );
 
 -- Tabela de favoritos
