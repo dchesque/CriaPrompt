@@ -19,6 +19,7 @@ export default function EditarPrompt() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [userSession, setUserSession] = useState(null);
   const promptRef = useRef(null);
   
   // Novos estados para campos personalizáveis
@@ -59,44 +60,63 @@ export default function EditarPrompt() {
   };
 
   useEffect(() => {
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUserSession(session);
+    };
+    
+    fetchSession();
+  }, []);
+
+  useEffect(() => {
     const carregarPrompt = async () => {
       if (!id) return;
 
       try {
+        setLoading(true);
+        
+        // Verificar sessão
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          router.push('/auth/login');
+          return;
+        }
+        
+        console.log("Carregando prompt para edição. ID:", id);
+        console.log("Usuário autenticado:", session.user.id);
+        
+        // Fazer uma consulta direta via API para buscar o prompt
         const response = await fetch(`/api/prompts/${id}`);
         
         if (!response.ok) {
-          if (response.status === 401) {
-            toast.error('Você precisa estar autenticado para acessar este prompt');
-            router.push('/auth/login');
-            return;
+          if (response.status === 404) {
+            setError('Prompt não encontrado');
+          } else if (response.status === 403) {
+            setError('Você não tem permissão para editar este prompt');
+          } else {
+            const data = await response.json();
+            setError(data.error || 'Erro ao carregar prompt');
           }
-          
-          if (response.status === 403) {
-            toast.error('Você não tem permissão para editar este prompt');
-            router.push('/dashboard');
-            return;
-          }
-          
-          throw new Error('Erro ao carregar prompt');
+          setLoading(false);
+          return;
         }
         
-        const data = await response.json();
+        const promptData = await response.json();
 
         // Preencher os campos do formulário com os dados existentes
-        setTitulo(data.titulo);
-        setPrompt(data.texto);
-        setCategoria(data.categoria);
-        setIsPublico(data.publico);
-        setTags(data.tags || []);
+        setTitulo(promptData.titulo);
+        setPrompt(promptData.texto);
+        setCategoria(promptData.categoria);
+        setIsPublico(promptData.publico);
+        setTags(promptData.tags || []);
         
         // Carregar campos personalizados se existirem
-        if (data.campos_personalizados && Array.isArray(data.campos_personalizados)) {
-          setCamposPersonalizados(data.campos_personalizados);
+        if (promptData.campos_personalizados && Array.isArray(promptData.campos_personalizados)) {
+          setCamposPersonalizados(promptData.campos_personalizados);
         } else {
           // Tentar detectar campos no texto do prompt (formato #campo)
           const regexCampos = /#([a-zA-Z0-9]+)/g;
-          const matches = [...data.texto.matchAll(regexCampos)];
+          const matches = [...promptData.texto.matchAll(regexCampos)];
           
           if (matches.length > 0) {
             const camposDetectados = matches.map(match => ({
@@ -116,13 +136,14 @@ export default function EditarPrompt() {
       } catch (error) {
         console.error('Erro ao carregar prompt:', error);
         setError('Não foi possível carregar este prompt.');
-        toast.error('Não foi possível carregar este prompt');
       } finally {
         setLoading(false);
       }
     };
 
-    carregarPrompt();
+    if (id) {
+      carregarPrompt();
+    }
   }, [id, router]);
 
   // Função para buscar sugestões de tags ao digitar
@@ -281,6 +302,7 @@ export default function EditarPrompt() {
     setError(null);
 
     try {
+      // Validações básicas
       if (!titulo.trim()) {
         throw new Error('O título é obrigatório');
       }
@@ -288,28 +310,45 @@ export default function EditarPrompt() {
       if (!prompt.trim()) {
         throw new Error('O texto do prompt é obrigatório');
       }
+
+      // Obter token de autenticação para o fetch
+      const { data: { session } } = await supabase.auth.getSession();
       
-      // Preparar os dados para o envio
+      if (!session) {
+        toast.error("Sessão expirada. Faça login novamente.");
+        router.push('/auth/login');
+        setSaving(false);
+        return;
+      }
+      
+      const token = session.access_token;
+      
+      // Preparar dados para a API
       const promptData = {
         titulo,
         texto: prompt,
         categoria,
         publico: isPublico,
-        tags: tags,
+        tags,
         campos_personalizados: camposPersonalizados.length > 0 ? camposPersonalizados : null
       };
-
+      
+      console.log("Enviando dados para atualização:", { id, ...promptData });
+      
+      // Fazer a requisição para a API
       const response = await fetch(`/api/prompts/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(promptData),
+        body: JSON.stringify(promptData)
       });
-
+      
       const data = await response.json();
-
+      
       if (!response.ok) {
+        console.error("Erro na resposta da API:", response.status, data);
         throw new Error(data.error || 'Erro ao atualizar prompt');
       }
 
@@ -319,7 +358,7 @@ export default function EditarPrompt() {
       }, 1500);
     } catch (error) {
       console.error('Erro ao atualizar prompt:', error);
-      setError('Falha ao atualizar o prompt. Por favor, tente novamente.');
+      setError(error.message || 'Falha ao atualizar o prompt. Por favor, tente novamente.');
       toast.error(error.message || 'Falha ao atualizar o prompt');
     } finally {
       setSaving(false);
@@ -638,6 +677,7 @@ export default function EditarPrompt() {
                       <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                       <span className="ml-3 text-gray-700">Tornar público</span>
                     </label>
+                    
                     <p className="text-xs text-gray-500 ml-4">
                       Prompts públicos podem ser visualizados por outros usuários
                     </p>

@@ -21,10 +21,10 @@ export default async function handler(req, res) {
   // GET: Buscar prompt por ID
   if (req.method === 'GET') {
     try {
-      // Buscar o prompt diretamente sem tentar fazer joins automáticos
+      // Buscar o prompt diretamente com uma consulta mais simples
       const { data: prompt, error: promptError } = await supabase
         .from('prompts')
-        .select('*')
+        .select('*, users:user_id(email)')
         .eq('id', id)
         .single();
 
@@ -41,30 +41,14 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Você não tem permissão para acessar este prompt' });
       }
 
-      // Se precisar das informações do usuário, busque-as separadamente
-      let userData = null;
-      if (prompt.user_id) {
+      // Incrementar visualizações, mas apenas se o prompt for público ou se o usuário não for o dono
+      if (prompt.publico && (!userId || prompt.user_id !== userId)) {
         try {
-          // Tente buscar o email do usuário diretamente do auth.users se possível
-          // ou adicione sua própria lógica para buscar informações do usuário
-          const { data: user, error: userError } = await supabase
-            .from('users') // Se você tiver uma tabela 'users' no schema public
-            .select('email')
-            .eq('id', prompt.user_id)
-            .maybeSingle();
-            
-          if (!userError && user) {
-            userData = user;
-          }
-        } catch (userFetchError) {
-          console.error('Erro ao buscar informações do usuário:', userFetchError);
-          // Continue mesmo se não conseguir buscar os dados do usuário
+          await supabase.rpc('increment_views', { prompt_id: id });
+        } catch (viewError) {
+          console.error('Erro ao incrementar visualizações:', viewError);
+          // Continuar mesmo se falhar o incremento de visualizações
         }
-      }
-
-      // Adicionar informações do usuário ao prompt, se disponíveis
-      if (userData) {
-        prompt.users = userData;
       }
 
       return res.status(200).json(prompt);
@@ -75,7 +59,7 @@ export default async function handler(req, res) {
   }
 
   // Verificar autenticação para métodos que requerem autenticação
-  if (!session) {
+  if (!session || !userId) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
@@ -104,7 +88,9 @@ export default async function handler(req, res) {
       }
 
       // Preparar dados para atualização
-      const dadosAtualizacao = {};
+      const dadosAtualizacao = {
+        updated_at: new Date().toISOString()
+      };
       
       if (titulo !== undefined) dadosAtualizacao.titulo = titulo;
       if (texto !== undefined) dadosAtualizacao.texto = texto;
@@ -112,9 +98,6 @@ export default async function handler(req, res) {
       if (publico !== undefined) dadosAtualizacao.publico = publico;
       if (tags !== undefined) dadosAtualizacao.tags = tags;
       if (campos_personalizados !== undefined) dadosAtualizacao.campos_personalizados = campos_personalizados;
-      
-      // Adicionar timestamp de atualização
-      dadosAtualizacao.updated_at = new Date().toISOString();
 
       // Atualizar prompt
       const { data, error: updateError } = await supabase

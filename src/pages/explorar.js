@@ -96,11 +96,13 @@ export default function Explorar() {
   const carregarDados = async (tags = tagsFiltro, categoria = categoriaFiltro, termo = termoBusca) => {
     try {
       setLoading(true);
+      console.log("Carregando prompts públicos...");
       
       // Verificar sessão do usuário
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id;
       setUserId(currentUserId);
+      console.log("Usuário autenticado:", currentUserId ? "Sim" : "Não");
 
       // Carregar tags populares se ainda não carregou
       if (tagsPopulares.length === 0) {
@@ -115,7 +117,10 @@ export default function Explorar() {
         }
       }
 
-      // Carregar prompts públicos
+      // Carregar prompts públicos - Consulta simplificada
+      console.log("Executando consulta de prompts públicos");
+      
+      // Construir consulta com filtros
       let query = supabase
         .from('prompts')
         .select(`
@@ -127,12 +132,9 @@ export default function Explorar() {
           views,
           tags,
           user_id,
-          users:user_id (
-            email
-          )
+          publico
         `)
-        .eq('publico', true)
-        .order('created_at', { ascending: false });
+        .eq('publico', true);
 
       if (categoria) {
         query = query.eq('categoria', categoria);
@@ -142,13 +144,21 @@ export default function Explorar() {
         query = query.or(`titulo.ilike.%${termo}%,texto.ilike.%${termo}%`);
       }
       
-      if (tags.length > 0) {
+      if (tags && tags.length > 0) {
         query = query.contains('tags', tags);
       }
+      
+      // Ordenar por data de criação (mais recentes primeiro)
+      query = query.order('created_at', { ascending: false });
 
       const { data: promptsData, error: promptsError } = await query;
 
-      if (promptsError) throw promptsError;
+      if (promptsError) {
+        console.error("Erro na consulta:", promptsError);
+        throw promptsError;
+      }
+      
+      console.log(`Prompts encontrados: ${promptsData?.length || 0}`);
       setPrompts(promptsData || []);
 
       // Se usuário estiver logado, carregar seus favoritos
@@ -158,7 +168,10 @@ export default function Explorar() {
           .select('prompt_id')
           .eq('user_id', currentUserId);
 
-        if (favoritosError) throw favoritosError;
+        if (favoritosError) {
+          console.error("Erro ao buscar favoritos:", favoritosError);
+          throw favoritosError;
+        }
         setFavoritos(favoritosData?.map(f => f.prompt_id) || []);
       }
     } catch (error) {
@@ -269,6 +282,9 @@ export default function Explorar() {
                 <option value="criativo">Criativo</option>
                 <option value="academico">Acadêmico</option>
                 <option value="profissional">Profissional</option>
+                <option value="imagem">Geração de Imagem</option>
+                <option value="codigo">Programação</option>
+                <option value="outro">Outro</option>
               </select>
             </div>
             <div className="flex items-end">
@@ -460,7 +476,7 @@ export default function Explorar() {
                 
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500">
-                    Por: {prompt.users?.email || 'Usuário anônimo'}
+                    Por: {prompt.user_email || 'Usuário'}
                   </span>
                   <div className="flex items-center space-x-3">
                     <span className="text-xs text-gray-500">
