@@ -23,45 +23,93 @@ export default function EditarPrompt() {
   const [sugestoesTags, setSugestoesTags] = useState([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
 
-  useEffect(() => {
-    const carregarPrompt = async () => {
-      if (!id) return;
+  // src/pages/prompts/editar/[id].js
 
-      try {
-        const response = await fetch(`/api/prompts/${id}`);
-        
-        if (!response.ok) {
-          if (response.status === 401) {
-            router.push('/auth/login');
-            return;
-          }
-          
-          if (response.status === 403) {
-            router.push('/dashboard');
-            return;
-          }
-          
-          throw new Error('Erro ao carregar prompt');
-        }
-        
-        const data = await response.json();
+// Atualizando o efeito que carrega os dados do prompt
+useEffect(() => {
+  const carregarPrompt = async () => {
+    if (!id) return;
 
-        // Preencher os campos do formulário com os dados existentes
-        setTitulo(data.titulo);
-        setPrompt(data.texto);
-        setCategoria(data.categoria);
-        setIsPublico(data.publico);
-        setTags(data.tags || []);
-      } catch (error) {
-        console.error('Erro ao carregar prompt:', error);
-        setError('Não foi possível carregar este prompt.');
-      } finally {
-        setLoading(false);
+    try {
+      setLoading(true);
+      
+      // Verificar sessão
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/auth/login');
+        return;
       }
-    };
+      
+      console.log("Carregando prompt para edição. ID:", id);
+      console.log("Usuário autenticado:", session.user.id);
+      
+      // Fazer uma consulta direta para o Supabase em vez de usar a API
+      const { data: promptData, error: promptError } = await supabase
+        .from('prompts')
+        .select('*')
+        .eq('id', id)
+        .single();
+        
+      if (promptError) {
+        console.error('Erro ao buscar prompt:', promptError);
+        if (promptError.code === 'PGRST116') {
+          setError('Prompt não encontrado');
+        } else {
+          setError(`Erro ao buscar prompt: ${promptError.message}`);
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // Verificar permissões
+      if (promptData.user_id !== session.user.id && !promptData.publico) {
+        setError('Você não tem permissão para editar este prompt');
+        setLoading(false);
+        return;
+      }
 
+      // Preencher os campos do formulário com os dados existentes
+      setTitulo(promptData.titulo);
+      setPrompt(promptData.texto);
+      setCategoria(promptData.categoria);
+      setIsPublico(promptData.publico);
+      setTags(promptData.tags || []);
+      
+      // Carregar campos personalizados se existirem
+      if (promptData.campos_personalizados && Array.isArray(promptData.campos_personalizados)) {
+        setCamposPersonalizados(promptData.campos_personalizados);
+      } else {
+        // Tentar detectar campos no texto do prompt (formato #campo)
+        const regexCampos = /#([a-zA-Z0-9]+)/g;
+        const matches = [...promptData.texto.matchAll(regexCampos)];
+        
+        if (matches.length > 0) {
+          const camposDetectados = matches.map(match => ({
+            nome: match[1],
+            descricao: `Campo ${match[1]}`,
+            valorPadrao: ''
+          }));
+          
+          // Filtrar para evitar duplicatas
+          const camposUnicos = camposDetectados.filter((campo, index, self) => 
+            index === self.findIndex(c => c.nome === campo.nome)
+          );
+          
+          setCamposPersonalizados(camposUnicos);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar prompt:', error);
+      setError('Não foi possível carregar este prompt. ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (id) {
     carregarPrompt();
-  }, [id, router]);
+  }
+}, [id, router]);
 
   // Função para buscar sugestões de tags ao digitar
   const buscarSugestoesTags = async (valor) => {
