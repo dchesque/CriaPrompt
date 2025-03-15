@@ -26,6 +26,9 @@ export default function PromptCard({
   const [copiado, setCopiado] = useState(false);
   const [hovering, setHovering] = useState(false);
   const router = useRouter();
+
+  // Verificar se o usuário é o proprietário do prompt
+  const promptOwner = userId && prompt.user_id === userId;
   
   // Verificar se o prompt tem campos personalizáveis
   const temCamposPersonalizados = prompt.campos_personalizados && 
@@ -152,6 +155,24 @@ export default function PromptCard({
     return texto.substring(0, limite) + '...';
   };
 
+  // Obter email do autor formatado
+  const getAuthorEmail = () => {
+    if (!prompt.users) return 'Usuário anônimo';
+    
+    const email = prompt.users.email;
+    if (!email) return 'Usuário anônimo';
+    
+    // Formatar email para exibição
+    const parts = email.split('@');
+    if (parts.length !== 2) return email;
+    
+    if (parts[0].length > 12) {
+      return parts[0].substring(0, 12) + '...';
+    }
+    
+    return parts[0];
+  };
+
   return (
     <div 
       className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer group h-full flex flex-col"
@@ -230,9 +251,9 @@ export default function PromptCard({
         <div className="mt-auto pt-2">
           <div className="flex justify-between items-center text-xs text-gray-500">
             <div>
-              {showAuthor && prompt.users && (
+              {showAuthor && (
                 <span className="flex items-center">
-                  Por: {prompt.users.email?.split('@')[0] || 'Anônimo'}
+                  Por: {getAuthorEmail()}
                 </span>
               )}
             </div>
@@ -262,7 +283,7 @@ export default function PromptCard({
           </button>
           
           <div className="flex space-x-2">
-            {isOwner && (
+            {(isOwner || promptOwner) && (
               <>
                 <button
                   onClick={navigateToEdit}

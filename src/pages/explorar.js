@@ -2,10 +2,11 @@ import Head from 'next/head';
 import Header from '../components/Header';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import Link from 'next/link';
+import { useRouter } from 'next/router';
 import PromptCard from '../components/PromptCard';
 
 export default function Explorar() {
+  const router = useRouter();
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [categoriaFiltro, setCategoriaFiltro] = useState('');
@@ -175,49 +176,46 @@ export default function Explorar() {
     carregarDados(tagsFiltro, categoriaFiltro, termoBusca);
   };
 
-  const adicionarFavorito = async (promptId, event) => {
-    // Impedir que o clique no botão de favorito leve à página de detalhes
-    event.stopPropagation();
-    event.preventDefault();
-    
+  const handleToggleFavorito = async (promptId) => {
     if (!userId) {
       alert('Você precisa estar logado para adicionar favoritos');
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('favoritos')
-        .insert({ prompt_id: promptId, user_id: userId });
-
-      if (error) {
-        if (error.code === '23505') { // Violação de restrição única
-          alert('Este prompt já está nos seus favoritos');
-        } else {
-          throw error;
-        }
+      if (favoritos.includes(promptId)) {
+        // Remover dos favoritos
+        await supabase
+          .from('favoritos')
+          .delete()
+          .eq('prompt_id', promptId)
+          .eq('user_id', userId);
+          
+        setFavoritos(favoritos.filter(id => id !== promptId));
       } else {
-        setFavoritos([...favoritos, promptId]);
-        alert('Adicionado aos favoritos com sucesso!');
+        // Adicionar aos favoritos
+        const { error } = await supabase
+          .from('favoritos')
+          .insert({ prompt_id: promptId, user_id: userId });
+
+        if (error) {
+          if (error.code === '23505') { // Violação de restrição única
+            alert('Este prompt já está nos seus favoritos');
+          } else {
+            throw error;
+          }
+        } else {
+          setFavoritos([...favoritos, promptId]);
+        }
       }
     } catch (error) {
-      console.error('Erro ao adicionar favorito:', error);
-      alert('Erro ao adicionar aos favoritos');
+      console.error('Erro ao atualizar favorito:', error);
+      alert('Erro ao atualizar favorito');
     }
   };
 
-  const copiarParaClipboard = async (texto, event) => {
-    // Impedir que o clique no botão de copiar leve à página de detalhes
-    event.stopPropagation();
-    event.preventDefault();
-    
-    try {
-      await navigator.clipboard.writeText(texto);
-      alert('Copiado para a área de transferência!');
-    } catch (error) {
-      console.error('Erro ao copiar:', error);
-      alert('Não foi possível copiar o texto');
-    }
+  const navegarParaPrompt = (promptId) => {
+    router.push(`/prompts/${promptId}`);
   };
 
   const limparFiltros = () => {
@@ -398,29 +396,93 @@ export default function Explorar() {
                 Limpar filtros
               </button>
             ) : (
-              <Link href="/criar">
-                <span className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer">
-                  Criar o primeiro prompt
-                </span>
-              </Link>
+              <button
+                onClick={() => router.push('/criar')}
+                className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer"
+              >
+                Criar o primeiro prompt
+              </button>
             )}
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {prompts.map((prompt) => (
-              <PromptCard
+              <div 
                 key={prompt.id}
-                prompt={prompt}
-                userId={userId}
-                isFavorito={favoritos.includes(prompt.id)}
-                onToggleFavorito={(promptId) => {
-                  if (favoritos.includes(promptId)) {
-                    setFavoritos(favoritos.filter(id => id !== promptId));
-                  } else {
-                    setFavoritos([...favoritos, promptId]);
-                  }
-                }}
-              />
+                className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow duration-300"
+                onClick={() => navegarParaPrompt(prompt.id)}
+              >
+                <div className="flex justify-between items-start mb-4">
+                  <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+                    {prompt.categoria}
+                  </span>
+                  {userId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFavorito(prompt.id);
+                      }}
+                      className={`${
+                        favoritos.includes(prompt.id)
+                          ? 'text-red-500'
+                          : 'text-gray-400 hover:text-red-500'
+                      }`}
+                    >
+                      ❤️
+                    </button>
+                  )}
+                </div>
+                <h3 className="font-semibold text-lg mb-2">{prompt.titulo}</h3>
+                <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
+                
+                {/* Exibição de tags */}
+                {prompt.tags && prompt.tags.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-1.5">
+                    {prompt.tags.slice(0, 3).map((tag, index) => (
+                      <span 
+                        key={index}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          adicionarTag(tag);
+                        }}
+                        className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full hover:bg-gray-200 cursor-pointer"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                    {prompt.tags.length > 3 && (
+                      <span className="text-xs text-gray-500">
+                        +{prompt.tags.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-gray-500">
+                    Por: {prompt.users?.email || 'Usuário anônimo'}
+                  </span>
+                  <div className="flex items-center space-x-3">
+                    <span className="text-xs text-gray-500">
+                      👁️ {prompt.views || 0}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(prompt.texto)
+                          .then(() => alert('Copiado para a área de transferência!'))
+                          .catch(err => {
+                            console.error('Erro ao copiar:', err);
+                            alert('Não foi possível copiar o texto');
+                          });
+                      }}
+                      className="text-indigo-600 hover:text-indigo-800"
+                    >
+                      Copiar
+                    </button>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         )}

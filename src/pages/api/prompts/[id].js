@@ -8,52 +8,69 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'ID do prompt é obrigatório' });
   }
 
+  console.log(`API prompts/${id} - método: ${req.method}`);
+
   // Obter sessão do usuário
   const { data: { session } } = await supabase.auth.getSession({
     req: req
   });
   
-  // Prompt por ID (GET)
+  const userId = session?.user?.id;
+  console.log(`Usuário autenticado: ${userId || 'Não'}`);
+
+  // GET: Buscar prompt por ID
   if (req.method === 'GET') {
     try {
-      // Buscar o prompt
-      const { data: prompt, error } = await supabase
+      // Buscar o prompt diretamente sem tentar fazer joins automáticos
+      const { data: prompt, error: promptError } = await supabase
         .from('prompts')
-        .select(`
-          id,
-          user_id,
-          titulo,
-          texto,
-          categoria,
-          publico,
-          views,
-          created_at,
-          tags,
-          campos_personalizados,
-          users:user_id (
-            email
-          )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
-      // Verificar erro na busca
-      if (error) {
-        if (error.code === 'PGRST116') { // Não encontrado
+      if (promptError) {
+        console.error('Erro ao buscar prompt:', promptError);
+        if (promptError.code === 'PGRST116') { // Não encontrado
           return res.status(404).json({ error: 'Prompt não encontrado' });
         }
-        throw error;
+        throw promptError;
       }
 
       // Verificar permissões: permitir acesso apenas se o prompt for público ou pertencer ao usuário
-      if (!prompt.publico && (!session || prompt.user_id !== session.user.id)) {
+      if (!prompt.publico && (!userId || prompt.user_id !== userId)) {
         return res.status(403).json({ error: 'Você não tem permissão para acessar este prompt' });
+      }
+
+      // Se precisar das informações do usuário, busque-as separadamente
+      let userData = null;
+      if (prompt.user_id) {
+        try {
+          // Tente buscar o email do usuário diretamente do auth.users se possível
+          // ou adicione sua própria lógica para buscar informações do usuário
+          const { data: user, error: userError } = await supabase
+            .from('users') // Se você tiver uma tabela 'users' no schema public
+            .select('email')
+            .eq('id', prompt.user_id)
+            .maybeSingle();
+            
+          if (!userError && user) {
+            userData = user;
+          }
+        } catch (userFetchError) {
+          console.error('Erro ao buscar informações do usuário:', userFetchError);
+          // Continue mesmo se não conseguir buscar os dados do usuário
+        }
+      }
+
+      // Adicionar informações do usuário ao prompt, se disponíveis
+      if (userData) {
+        prompt.users = userData;
       }
 
       return res.status(200).json(prompt);
     } catch (error) {
       console.error('Erro ao buscar prompt:', error);
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: 'Erro ao buscar prompt' });
     }
   }
 
@@ -62,15 +79,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Não autorizado' });
   }
 
-  const userId = session.user.id;
-
-  // Atualizar prompt (PUT)
+  // PUT: Atualizar prompt
   if (req.method === 'PUT') {
     const { titulo, texto, categoria, publico, tags, campos_personalizados } = req.body;
-
-    if (!titulo && !texto && categoria === undefined && publico === undefined && !tags && !campos_personalizados) {
-      return res.status(400).json({ error: 'Nenhum campo fornecido para atualização' });
-    }
 
     try {
       // Verificar se o prompt pertence ao usuário
@@ -92,44 +103,6 @@ export default async function handler(req, res) {
         return res.status(403).json({ error: 'Você não tem permissão para atualizar este prompt' });
       }
 
-      // Validar campos personalizados
-      let camposValidados = undefined;
-      if (campos_personalizados !== undefined) {
-        if (Array.isArray(campos_personalizados) && campos_personalizados.length > 0) {
-          // Verificar se todos os campos têm nome
-          const camposSemNome = campos_personalizados.filter(campo => !campo.nome);
-          if (camposSemNome.length > 0) {
-            return res.status(400).json({ error: 'Todos os campos personalizados devem ter um nome' });
-          }
-          
-          // Limitar para no máximo 10 campos personalizados
-          if (campos_personalizados.length > 10) {
-            return res.status(400).json({ error: 'Máximo de 10 campos personalizados permitidos' });
-          }
-          
-          camposValidados = campos_personalizados;
-        } else {
-          // Se não for um array não vazio, definir como null para remover campos personalizados
-          camposValidados = null;
-        }
-      }
-      
-      // Validar tags
-      let tagsValidadas = undefined;
-      if (tags !== undefined) {
-        if (Array.isArray(tags)) {
-          // Limitar para no máximo 5 tags
-          if (tags.length > 5) {
-            return res.status(400).json({ error: 'Máximo de 5 tags permitidas' });
-          }
-          
-          // Normalizar tags (lowercase, sem espaços)
-          tagsValidadas = tags.map(tag => tag.trim().toLowerCase()).filter(tag => tag);
-        } else {
-          tagsValidadas = [];
-        }
-      }
-
       // Preparar dados para atualização
       const dadosAtualizacao = {};
       
@@ -137,8 +110,8 @@ export default async function handler(req, res) {
       if (texto !== undefined) dadosAtualizacao.texto = texto;
       if (categoria !== undefined) dadosAtualizacao.categoria = categoria;
       if (publico !== undefined) dadosAtualizacao.publico = publico;
-      if (tagsValidadas !== undefined) dadosAtualizacao.tags = tagsValidadas;
-      if (camposValidados !== undefined) dadosAtualizacao.campos_personalizados = camposValidados;
+      if (tags !== undefined) dadosAtualizacao.tags = tags;
+      if (campos_personalizados !== undefined) dadosAtualizacao.campos_personalizados = campos_personalizados;
       
       // Adicionar timestamp de atualização
       dadosAtualizacao.updated_at = new Date().toISOString();
@@ -159,7 +132,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // Excluir prompt (DELETE)
+  // DELETE: Excluir prompt
   if (req.method === 'DELETE') {
     try {
       // Verificar se o prompt pertence ao usuário

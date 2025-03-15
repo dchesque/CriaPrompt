@@ -1,24 +1,11 @@
 import Head from 'next/head';
 import Header from '../../components/Header';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { 
-  FiCopy, 
-  FiEdit2, 
-  FiHeart, 
-  FiShare2, 
-  FiArrowLeft,
-  FiEye,
-  FiTag,
-  FiUser,
-  FiCalendar,
-  FiInfo
-} from 'react-icons/fi';
-import { motion } from 'framer-motion';
 
 export default function DetalhesPrompt() {
   const router = useRouter();
@@ -30,10 +17,8 @@ export default function DetalhesPrompt() {
   const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
   const [isFavorito, setIsFavorito] = useState(false);
-  const [promptsRelacionados, setPromptsRelacionados] = useState([]);
   const [camposValores, setCamposValores] = useState({});
   const [compartilharUrl, setCompartilharUrl] = useState('');
-  const [compartilhando, setCompartilhando] = useState(false);
 
   useEffect(() => {
     // Definir URL para compartilhamento
@@ -51,39 +36,58 @@ export default function DetalhesPrompt() {
         const { data: { session } } = await supabase.auth.getSession();
         setUser(session?.user || null);
 
-        // Incrementar visualizações usando o RPC
+        // Tentar incrementar visualizações
         try {
-          await supabase.rpc('increment_views', { prompt_id: id });
+          await fetch('/api/prompts/incrementView', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ promptId: id }),
+          });
         } catch (viewError) {
           console.error('Erro ao incrementar visualizações:', viewError);
         }
 
-        // Buscar detalhes do prompt via API
-        const response = await fetch(`/api/prompts/${id}`);
+        // Buscar detalhes do prompt
+        const { data: promptData, error: promptError } = await supabase
+          .from('prompts')
+          .select('*')
+          .eq('id', id)
+          .single();
         
-        if (!response.ok) {
-          if (response.status === 403 || response.status === 404) {
-            router.push('/explorar');
-            return;
+        if (promptError) {
+          console.error('Erro ao buscar prompt:', promptError);
+          if (promptError.code === 'PGRST116') {
+            setError('Prompt não encontrado');
+          } else {
+            throw promptError;
           }
-          throw new Error('Erro ao carregar prompt');
+          setLoading(false);
+          return;
+        }
+
+        // Verificar se o prompt é público ou se pertence ao usuário
+        if (!promptData.publico && (!session?.user || promptData.user_id !== session.user.id)) {
+          setError('Você não tem permissão para visualizar este prompt');
+          setLoading(false);
+          return;
         }
         
-        const data = await response.json();
-        setPrompt(data);
-        setPromptModificado(data.texto);
+        setPrompt(promptData);
+        setPromptModificado(promptData.texto);
         
         // Inicializar campos personalizados se existirem
-        if (data.campos_personalizados && Array.isArray(data.campos_personalizados)) {
+        if (promptData.campos_personalizados && Array.isArray(promptData.campos_personalizados)) {
           const valoresIniciais = {};
-          data.campos_personalizados.forEach(campo => {
+          promptData.campos_personalizados.forEach(campo => {
             valoresIniciais[campo.nome] = campo.valorPadrao || '';
           });
           setCamposValores(valoresIniciais);
         } else {
           // Tentar detectar campos no texto do prompt (formato #campo)
           const regexCampos = /#([a-zA-Z0-9]+)/g;
-          const matches = [...data.texto.matchAll(regexCampos)];
+          const matches = [...promptData.texto.matchAll(regexCampos)];
           
           if (matches.length > 0) {
             const valoresIniciais = {};
@@ -110,29 +114,6 @@ export default function DetalhesPrompt() {
 
           if (!favError && favData) {
             setIsFavorito(true);
-          }
-        }
-        
-        // Buscar prompts relacionados (se houver tags)
-        if (data.tags && data.tags.length > 0) {
-          // Buscar prompts com tags em comum
-          const { data: relacionados, error: relError } = await supabase
-            .from('prompts')
-            .select(`
-              id,
-              titulo,
-              categoria,
-              tags,
-              views
-            `)
-            .eq('publico', true)
-            .neq('id', id) // Excluir o prompt atual
-            .contains('tags', data.tags)
-            .order('views', { ascending: false })
-            .limit(3);
-            
-          if (!relError && relacionados?.length > 0) {
-            setPromptsRelacionados(relacionados);
           }
         }
       } catch (error) {
@@ -216,8 +197,6 @@ export default function DetalhesPrompt() {
   };
 
   const compartilharPrompt = async () => {
-    setCompartilhando(true);
-    
     try {
       if (navigator.share) {
         await navigator.share({
@@ -232,8 +211,6 @@ export default function DetalhesPrompt() {
     } catch (error) {
       console.error('Erro ao compartilhar:', error);
       toast.error('Não foi possível compartilhar o prompt');
-    } finally {
-      setCompartilhando(false);
     }
   };
 
@@ -260,7 +237,7 @@ export default function DetalhesPrompt() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="min-h-screen bg-gray-100">
         <Header />
         <main className="container-app py-10">
           <div className="flex justify-center items-center py-20">
@@ -274,10 +251,10 @@ export default function DetalhesPrompt() {
 
   if (error || !prompt) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="min-h-screen bg-gray-100">
         <Header />
         <main className="container-app py-10">
-          <div className="bg-white rounded-xl shadow-lg p-8 text-center max-w-lg mx-auto">
+          <div className="bg-white rounded-lg shadow p-8 text-center max-w-lg mx-auto">
             <div className="text-red-500 text-5xl mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -286,7 +263,7 @@ export default function DetalhesPrompt() {
             <h2 className="text-2xl font-bold text-gray-800 mb-4">{error || 'Prompt não encontrado'}</h2>
             <p className="text-gray-600 mb-6">Não foi possível acessar este prompt. Ele pode ter sido removido ou você não tem permissão para visualizá-lo.</p>
             <Link href="/explorar">
-              <span className="inline-block bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium py-3 px-6 rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg cursor-pointer">
+              <span className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer">
                 Voltar para Explorar
               </span>
             </Link>
@@ -297,7 +274,7 @@ export default function DetalhesPrompt() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gray-100">
       <Head>
         <title>{prompt.titulo} | CriaPrompt</title>
         <meta name="description" content={`${prompt.titulo} - Prompt para IA`} />
@@ -314,14 +291,16 @@ export default function DetalhesPrompt() {
               onClick={() => router.back()}
               className="mr-4 text-gray-600 hover:text-indigo-600 transition-colors"
             >
-              <FiArrowLeft size={24} />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
             </button>
             <h1 className="text-3xl font-bold text-gray-800 truncate flex-1">
               {prompt.titulo}
             </h1>
           </div>
           
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8 transition-all duration-300 hover:shadow-xl">
+          <div className="bg-white rounded-lg shadow-lg overflow-hidden mb-8">
             {/* Cabeçalho com informações do prompt */}
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
               <div className="flex justify-between items-center">
@@ -330,7 +309,11 @@ export default function DetalhesPrompt() {
                     {prompt.categoria}
                   </span>
                   <span className="ml-3 flex items-center text-sm">
-                    <FiEye className="mr-1" /> {prompt.views || 0} visualizações
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    {prompt.views || 0} visualizações
                   </span>
                 </div>
                 
@@ -342,22 +325,27 @@ export default function DetalhesPrompt() {
                     }`}
                     title={isFavorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
                   >
-                    <FiHeart className={isFavorito ? "fill-current" : ""} />
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isFavorito ? 'fill-current' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
                   </button>
                   
                   <button 
                     onClick={compartilharPrompt}
                     className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
                     title="Compartilhar"
-                    disabled={compartilhando}
                   >
-                    <FiShare2 />
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
                   </button>
                   
                   {user && prompt.user_id === user.id && (
                     <Link href={`/prompts/editar/${prompt.id}`}>
                       <span className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer" title="Editar prompt">
-                        <FiEdit2 />
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
                       </span>
                     </Link>
                   )}
@@ -369,19 +357,16 @@ export default function DetalhesPrompt() {
               {/* Informações do autor */}
               <div className="flex justify-between items-center mb-6 text-sm text-gray-600">
                 <div className="flex items-center">
-                  <FiUser className="mr-1" /> 
-                  {prompt.users?.email ? (
-                    <Link href={`/usuarios/${prompt.user_id}`}>
-                      <span className="text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer">
-                        {prompt.users.email}
-                      </span>
-                    </Link>
-                  ) : (
-                    <span>Usuário anônimo</span>
-                  )}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>ID do usuário: {prompt.user_id}</span>
                 </div>
                 <div className="flex items-center">
-                  <FiCalendar className="mr-1" /> {new Date(prompt.created_at).toLocaleDateString()}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg> 
+                  {new Date(prompt.created_at).toLocaleDateString()}
                 </div>
               </div>
               
@@ -389,7 +374,10 @@ export default function DetalhesPrompt() {
               {prompt.tags && prompt.tags.length > 0 && (
                 <div className="mb-6">
                   <div className="flex items-center text-sm text-gray-600 mb-2">
-                    <FiTag className="mr-1" /> Tags:
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                    Tags:
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {prompt.tags.map((tag, index) => (
@@ -407,7 +395,10 @@ export default function DetalhesPrompt() {
               {Object.keys(camposValores).length > 0 && (
                 <div className="mb-6">
                   <h3 className="text-lg font-semibold mb-3 flex items-center">
-                    <FiInfo className="mr-2 text-indigo-600" /> Personalize este prompt:
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Personalize este prompt:
                   </h3>
                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -452,7 +443,10 @@ export default function DetalhesPrompt() {
                     onClick={copiarPrompt}
                     className="flex items-center text-indigo-600 hover:text-indigo-800 text-sm"
                   >
-                    <FiCopy className="mr-1" /> Copiar
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-12a2 2 0 00-2-2h-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l-3-3" />
+                    </svg>
+                    Copiar
                   </button>
                 </div>
                 <div className="bg-gray-50 p-5 rounded-lg border border-gray-200">
@@ -460,50 +454,19 @@ export default function DetalhesPrompt() {
                 </div>
               </div>
               
-              {/* Botão de copiar fixo para mobile */}
+              {/* Botão de copiar para mobile */}
               <div className="md:hidden fixed bottom-6 right-6 z-10">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                <button
                   onClick={copiarPrompt}
                   className="flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg"
                 >
-                  <FiCopy size={24} />
-                </motion.button>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-12a2 2 0 00-2-2h-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l-3-3" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
-          
-          {/* Prompts relacionados */}
-          {promptsRelacionados.length > 0 && (
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
-              <h2 className="text-xl font-semibold mb-4">Prompts Relacionados</h2>
-              <div className="grid gap-4 md:grid-cols-3">
-                {promptsRelacionados.map(p => (
-                  <Link href={`/prompts/${p.id}`} key={p.id}>
-                    <div className="bg-gray-50 rounded-lg p-4 cursor-pointer hover:shadow-md transition-all duration-200 border border-gray-200 hover:border-indigo-200">
-                      <h3 className="font-medium text-indigo-600 mb-2 line-clamp-2">{p.titulo}</h3>
-                      <div className="flex justify-between items-center text-xs text-gray-500">
-                        <span>{p.categoria}</span>
-                        <span className="flex items-center">
-                          <FiEye className="mr-1" /> {p.views || 0}
-                        </span>
-                      </div>
-                      {p.tags && p.tags.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {p.tags.filter(tag => prompt.tags.includes(tag)).slice(0, 3).map((tag, i) => (
-                            <span key={i} className="bg-gray-200 px-1.5 py-0.5 rounded-full text-xs">
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

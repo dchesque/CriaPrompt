@@ -2,9 +2,11 @@ import Head from 'next/head';
 import Header from '../components/Header';
 import AuthGuard from '../components/AuthGuard';
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import { FiEdit2, FiTrash2, FiEye, FiLock, FiGlobe, FiCalendar } from 'react-icons/fi';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -170,26 +172,39 @@ export default function Dashboard() {
         totalViews: prev.totalViews - (promptExcluido?.views || 0)
       }));
       
-      alert('Prompt excluído com sucesso!');
+      toast.success('Prompt excluído com sucesso!');
     } catch (error) {
       console.error('Erro ao excluir prompt:', error);
-      alert('Erro ao excluir prompt. Tente novamente.');
+      toast.error('Erro ao excluir prompt. Tente novamente.');
     }
+  };
+
+  const navigateToPrompt = (id) => {
+    router.push(`/prompts/${id}`);
+  };
+
+  const navigateToEdit = (id, e) => {
+    e.stopPropagation();
+    router.push(`/prompts/editar/${id}`);
   };
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gray-100">
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
         <Head>
           <title>Dashboard | CriaPrompt</title>
           <meta name="description" content="Seu dashboard na plataforma CriaPrompt" />
         </Head>
 
         <Header />
+        
+        <ToastContainer position="top-right" autoClose={3000} />
 
         <main className="container-app py-10">
           <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Seu Dashboard
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
+              Seu Dashboard
+            </span>
           </h1>
 
           {error && (
@@ -205,7 +220,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
+          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
             <h2 className="text-xl font-semibold mb-4">Bem-vindo, {user?.email}</h2>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -245,11 +260,12 @@ export default function Dashboard() {
               </div>
             )}
             
-            <Link href="/criar">
-              <span className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer">
-                Criar Novo Prompt
-              </span>
-            </Link>
+            <button
+              onClick={() => router.push('/criar')}
+              className="inline-block bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-md hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg"
+            >
+              Criar Novo Prompt
+            </button>
           </div>
 
           <div className="mb-8">
@@ -258,16 +274,18 @@ export default function Dashboard() {
               
               {prompts.length > 0 && (
                 <div className="flex gap-2">
-                  <Link href="/dashboard?filtro=recentes">
-                    <span className="text-sm text-indigo-600 hover:text-indigo-800 cursor-pointer">
-                      Mais recentes
-                    </span>
-                  </Link>
-                  <Link href="/dashboard?filtro=populares">
-                    <span className="text-sm text-indigo-600 hover:text-indigo-800 cursor-pointer">
-                      Mais visualizados
-                    </span>
-                  </Link>
+                  <button
+                    onClick={() => router.push('/dashboard?filtro=recentes')}
+                    className="text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Mais recentes
+                  </button>
+                  <button
+                    onClick={() => router.push('/dashboard?filtro=populares')}
+                    className="text-sm text-indigo-600 hover:text-indigo-800"
+                  >
+                    Mais visualizados
+                  </button>
                 </div>
               )}
             </div>
@@ -282,52 +300,64 @@ export default function Dashboard() {
                 <p className="text-gray-600 mb-4">
                   Você ainda não criou nenhum prompt.
                 </p>
-                <Link href="/criar">
-                  <span className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer">
-                    Criar Seu Primeiro Prompt
-                  </span>
-                </Link>
+                <button
+                  onClick={() => router.push('/criar')}
+                  className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300"
+                >
+                  Criar Seu Primeiro Prompt
+                </button>
               </div>
             ) : (
               <div className="grid gap-6 md:grid-cols-2">
                 {prompts.map((prompt) => (
-                  <Link href={`/prompts/${prompt.id}`} key={prompt.id}>
-                    <div className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow duration-300">
-                      <div className="flex justify-between items-start mb-4">
-                        <h3 className="font-semibold text-lg">{prompt.titulo}</h3>
-                        <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
-                          {prompt.categoria}
+                  <div 
+                    key={prompt.id}
+                    className="bg-white rounded-lg shadow-md hover:shadow-lg p-6 cursor-pointer transition-all duration-300"
+                    onClick={() => navigateToPrompt(prompt.id)}
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <h3 className="font-semibold text-lg">{prompt.titulo}</h3>
+                      <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
+                        {prompt.categoria}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-3">
+                        <span className="text-sm text-gray-500 flex items-center">
+                          {prompt.publico ? 
+                            <FiGlobe className="mr-1" size={14} /> : 
+                            <FiLock className="mr-1" size={14} />
+                          }
+                          {prompt.publico ? 'Público' : 'Privado'}
+                        </span>
+                        <span className="text-sm text-gray-500 flex items-center">
+                          <FiEye className="mr-1" size={14} />
+                          {prompt.views || 0}
+                        </span>
+                        <span className="text-sm text-gray-500 flex items-center">
+                          <FiCalendar className="mr-1" size={14} />
+                          {new Date(prompt.created_at).toLocaleDateString()}
                         </span>
                       </div>
-                      <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-sm text-gray-500">
-                            {prompt.publico ? '📢 Público' : '🔒 Privado'}
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            👁️ {prompt.views || 0}
-                          </span>
-                          <span className="text-sm text-gray-500">
-                            {new Date(prompt.created_at).toLocaleDateString()}
-                          </span>
-                        </div>
-                        <div className="flex space-x-3">
-                          <Link href={`/prompts/editar/${prompt.id}`} onClick={(e) => e.stopPropagation()}>
-                            <span className="text-blue-600 hover:text-blue-800 cursor-pointer">
-                              Editar
-                            </span>
-                          </Link>
-                          <button 
-                            onClick={(e) => handleDelete(prompt.id, e)}
-                            className="text-red-600 hover:text-red-800"
-                          >
-                            Excluir
-                          </button>
-                        </div>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={(e) => navigateToEdit(prompt.id, e)}
+                          className="text-blue-600 hover:text-blue-800 flex items-center"
+                        >
+                          <FiEdit2 size={16} className="mr-1" />
+                          Editar
+                        </button>
+                        <button 
+                          onClick={(e) => handleDelete(prompt.id, e)}
+                          className="text-red-600 hover:text-red-800 flex items-center"
+                        >
+                          <FiTrash2 size={16} className="mr-1" />
+                          Excluir
+                        </button>
                       </div>
                     </div>
-                  </Link>
+                  </div>
                 ))}
               </div>
             )}

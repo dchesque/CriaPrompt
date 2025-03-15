@@ -15,28 +15,35 @@ export default async function handler(req, res) {
     // Buscar o prompt para verificar se existe
     const { data: promptExists, error: promptError } = await supabase
       .from('prompts')
-      .select('id')
+      .select('id, views')
       .eq('id', promptId)
       .single();
 
-    if (promptError || !promptExists) {
-      return res.status(404).json({ error: 'Prompt não encontrado' });
+    if (promptError) {
+      console.error('Erro ao verificar prompt:', promptError);
+      if (promptError.code === 'PGRST116') { // Não encontrado
+        return res.status(404).json({ error: 'Prompt não encontrado' });
+      }
+      throw promptError;
     }
 
-    // Incrementar a visualização
+    // Incrementar a visualização diretamente
+    const novoValor = (promptExists.views || 0) + 1;
+    
     const { data, error } = await supabase
       .from('prompts')
-      .update({ views: supabase.sql`views + 1` })
+      .update({ views: novoValor })
       .eq('id', promptId)
       .select('views');
 
     if (error) {
+      console.error('Erro ao incrementar visualização:', error);
       throw error;
     }
 
     return res.status(200).json({ views: data[0].views });
   } catch (error) {
     console.error('Erro ao incrementar visualização:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message || 'Erro ao incrementar visualização' });
   }
 }
