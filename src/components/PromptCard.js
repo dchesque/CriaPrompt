@@ -13,6 +13,7 @@ import {
   FiLock, 
   FiGlobe
 } from 'react-icons/fi';
+import { isPromptOwner } from '../utils/promptUtils';
 
 export default function PromptCard({ 
   prompt, 
@@ -28,7 +29,7 @@ export default function PromptCard({
   const router = useRouter();
 
   // Verificar se o usuário é o proprietário do prompt
-  const promptOwner = userId && prompt.user_id === userId;
+  const promptOwner = isOwner || (userId && prompt.user_id === userId);
   
   // Verificar se o prompt tem campos personalizáveis
   const temCamposPersonalizados = prompt.campos_personalizados && 
@@ -48,6 +49,13 @@ export default function PromptCard({
     e.preventDefault();
     e.stopPropagation();
     router.push(`/prompts/editar/${prompt.id}`);
+  };
+  
+  // Função para ir para a página de utilização do prompt
+  const utilizarPrompt = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    router.push(`/prompts/utilizar/${prompt.id}`);
   };
 
   const toggleFavorito = async (e) => {
@@ -283,7 +291,8 @@ export default function PromptCard({
           </button>
           
           <div className="flex space-x-2">
-            {(isOwner || promptOwner) && (
+            {promptOwner ? (
+              // Botões para o proprietário
               <>
                 <button
                   onClick={navigateToEdit}
@@ -298,6 +307,17 @@ export default function PromptCard({
                   <FiTrash2 size={14} className="mr-1" /> Excluir
                 </button>
               </>
+            ) : (
+              // Botão para usuários não proprietários
+              <button
+                onClick={utilizarPrompt}
+                className="text-green-600 hover:text-green-800 text-sm px-2 py-1 rounded hover:bg-green-50 transition-colors flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Utilizar
+              </button>
             )}
           </div>
         </div>

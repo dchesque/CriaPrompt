@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { supabase } from '../../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { isPromptOwner } from '../../utils/promptUtils';
 
 export default function DetalhesPrompt() {
   const router = useRouter();
@@ -127,6 +128,9 @@ export default function DetalhesPrompt() {
     carregarPrompt();
   }, [id, router]);
 
+  // Verificar se o usuário atual é o proprietário do prompt
+  const isOwner = prompt ? isPromptOwner(prompt.user_id, user?.id) : false;
+
   // Efeito para atualizar o texto do prompt com os valores dos campos
   useEffect(() => {
     if (!prompt) return;
@@ -147,6 +151,11 @@ export default function DetalhesPrompt() {
     
     setPromptModificado(textoModificado);
   }, [prompt, camposValores]);
+
+  // Função para redirecionar para a página de utilização do prompt
+  const utilizarPrompt = () => {
+    router.push(`/prompts/utilizar/${id}`);
+  };
 
   const toggleFavorito = async () => {
     if (!user) {
@@ -340,7 +349,7 @@ export default function DetalhesPrompt() {
                     </svg>
                   </button>
                   
-                  {user && prompt.user_id === user.id && (
+                  {isOwner ? (
                     <Link href={`/prompts/editar/${prompt.id}`}>
                       <span className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer" title="Editar prompt">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -348,6 +357,16 @@ export default function DetalhesPrompt() {
                         </svg>
                       </span>
                     </Link>
+                  ) : (
+                    <button
+                      onClick={utilizarPrompt}
+                      className="p-2 rounded-full bg-green-500 hover:bg-green-600 text-white transition-colors"
+                      title="Utilizar este prompt"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                      </svg>
+                    </button>
                   )}
                 </div>
               </div>
@@ -453,6 +472,24 @@ export default function DetalhesPrompt() {
                   <div className="whitespace-pre-wrap">{promptModificado}</div>
                 </div>
               </div>
+              
+              {/* Botão de utilizar prompt para usuários que não são proprietários */}
+              {!isOwner && (
+                <div className="mt-8 text-center">
+                  <button
+                    onClick={utilizarPrompt}
+                    className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 transition-all duration-300 shadow-md"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    Utilizar este prompt
+                  </button>
+                  <p className="text-sm text-gray-500 mt-2">
+                    Personalize e crie sua própria versão deste prompt
+                  </p>
+                </div>
+              )}
               
               {/* Botão de copiar para mobile */}
               <div className="md:hidden fixed bottom-6 right-6 z-10">
