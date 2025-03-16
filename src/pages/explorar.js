@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useRouter } from 'next/router';
 import PromptCard from '../components/PromptCard';
+import PromptPreview from '../components/PromptPreview';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -17,13 +18,45 @@ export default function Explorar() {
   const [termoBusca, setTermoBusca] = useState('');
   const [userId, setUserId] = useState(null);
   const [favoritos, setFavoritos] = useState([]);
-  const [tagsPopulares, setTagsPopulares] = useState([]);
   const [tagsFiltro, setTagsFiltro] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [sugestoesTags, setSugestoesTags] = useState([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
+  
+  // Estados para a prévia do prompt
+  const [promptSelecionado, setPromptSelecionado] = useState(null);
+  const [favoritosContagem, setFavoritosContagem] = useState({});
 
-  // Função para buscar sugestões de tags ao digitar
+  // Função para exibir a prévia do prompt
+  const exibirPrevia = async (prompt) => {
+    setPromptSelecionado(prompt);
+    
+    // Carregar contagem de favoritos se ainda não tiver
+    if (!favoritosContagem[prompt.id]) {
+      try {
+        const { count, error } = await supabase
+          .from('favoritos')
+          .select('*', { count: 'exact', head: true })
+          .eq('prompt_id', prompt.id);
+          
+        if (!error) {
+          setFavoritosContagem(prev => ({ 
+            ...prev, 
+            [prompt.id]: count || 0 
+          }));
+        }
+      } catch (error) {
+        console.error('Erro ao contar favoritos:', error);
+      }
+    }
+  };
+
+  // Função para fechar a prévia
+  const fecharPrevia = () => {
+    setPromptSelecionado(null);
+  };
+
+  // Função para buscar sugestões de tags ao digitar (sem depender da tabela tags)
   const buscarSugestoesTags = async (valor) => {
     if (!valor.trim()) {
       setSugestoesTags([]);
@@ -33,23 +66,35 @@ export default function Explorar() {
     setCarregandoSugestoes(true);
     
     try {
+      // Em vez de buscar na tabela tags, vamos buscar tags existentes nos prompts
       const { data, error } = await supabase
-        .from('tags')
-        .select('nome')
-        .ilike('nome', `${valor}%`)
-        .order('count', { ascending: false })
-        .limit(5);
+        .from('prompts')
+        .select('tags')
+        .contains('tags', [valor])
+        .limit(10);
         
       if (error) throw error;
       
-      // Filtrar tags que já estão adicionadas
-      const sugestoesFiltradas = data
-        ?.map(tag => tag.nome)
-        .filter(nome => !tagsFiltro.includes(nome)) || [];
+      // Extrair tags únicas dos prompts
+      const todasTags = new Set();
+      data?.forEach(prompt => {
+        if (Array.isArray(prompt.tags)) {
+          prompt.tags.forEach(tag => {
+            if (tag.toLowerCase().includes(valor.toLowerCase())) {
+              todasTags.add(tag);
+            }
+          });
+        }
+      });
+      
+      // Converter para array e filtrar as que já estão em uso
+      const tagsUnicas = Array.from(todasTags)
+        .filter(tag => !tagsFiltro.includes(tag));
         
-      setSugestoesTags(sugestoesFiltradas);
+      setSugestoesTags(tagsUnicas);
     } catch (error) {
       console.error('Erro ao buscar sugestões de tags:', error);
+      setSugestoesTags([]);
     } finally {
       setCarregandoSugestoes(false);
     }
@@ -106,20 +151,7 @@ export default function Explorar() {
       const currentUserId = session?.user?.id;
       setUserId(currentUserId);
 
-      // Carregar tags populares se ainda não carregou
-      if (tagsPopulares.length === 0) {
-        const { data: tagData, error: tagError } = await supabase
-          .from('tags')
-          .select('nome, count')
-          .order('count', { ascending: false })
-          .limit(10);
-          
-        if (!tagError) {
-          setTagsPopulares(tagData || []);
-        }
-      }
-
-      // Construir consulta com filtros - modificada para não usar relacionamento users
+      // Construir consulta com filtros
       let query = supabase
         .from('prompts')
         .select(`
@@ -171,6 +203,30 @@ export default function Explorar() {
         }
         setFavoritos(favoritosData?.map(f => f.prompt_id) || []);
       }
+      
+      // Carregar contagem de favoritos para todos os prompts
+      const contagemFavoritos = {};
+      
+      // Para cada prompt, fazemos uma consulta individual para contar favoritos
+      if (promptsData && promptsData.length > 0) {
+        for (const prompt of promptsData) {
+          try {
+            const { count, error } = await supabase
+              .from('favoritos')
+              .select('*', { count: 'exact', head: true })
+              .eq('prompt_id', prompt.id);
+              
+            if (!error) {
+              contagemFavoritos[prompt.id] = count || 0;
+            }
+          } catch (err) {
+            console.error(`Erro ao contar favoritos para prompt ${prompt.id}:`, err);
+            contagemFavoritos[prompt.id] = 0;
+          }
+        }
+      }
+      
+      setFavoritosContagem(contagemFavoritos);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       toast.error('Erro ao carregar prompts');
@@ -203,6 +259,13 @@ export default function Explorar() {
           .eq('user_id', userId);
           
         setFavoritos(favoritos.filter(id => id !== promptId));
+        
+        // Decrementar contagem
+        setFavoritosContagem(prev => ({
+          ...prev,
+          [promptId]: Math.max(0, (prev[promptId] || 1) - 1)
+        }));
+        
         toast.success('Removido dos favoritos');
       } else {
         // Adicionar aos favoritos
@@ -218,6 +281,13 @@ export default function Explorar() {
           }
         } else {
           setFavoritos([...favoritos, promptId]);
+          
+          // Incrementar contagem
+          setFavoritosContagem(prev => ({
+            ...prev,
+            [promptId]: (prev[promptId] || 0) + 1
+          }));
+          
           toast.success('Adicionado aos favoritos');
         }
       }
@@ -244,6 +314,18 @@ export default function Explorar() {
       <Header />
       
       <ToastContainer position="top-right" autoClose={3000} />
+      
+      {/* Modal de prévia de prompt */}
+      {promptSelecionado && (
+        <PromptPreview
+          prompt={promptSelecionado}
+          userId={userId}
+          isFavorito={favoritos.includes(promptSelecionado.id)}
+          onToggleFavorito={handleToggleFavorito}
+          favoritosCount={favoritosContagem[promptSelecionado.id] || 0}
+          onClose={fecharPrevia}
+        />
+      )}
 
       <main className="container-app py-10">
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
@@ -352,30 +434,6 @@ export default function Explorar() {
             </div>
           </div>
           
-          {/* Tags populares */}
-          {tagsPopulares.length > 0 && (
-            <div className="mb-2">
-              <p className="text-sm text-gray-600 mb-2">Tags populares:</p>
-              <div className="flex flex-wrap gap-2">
-                {tagsPopulares.map((tag, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => adicionarTag(tag.nome)}
-                    className={`px-2 py-1 text-xs rounded-full border 
-                      ${tagsFiltro.includes(tag.nome) 
-                        ? 'bg-indigo-100 text-indigo-800 border-indigo-300' 
-                        : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200'
-                      }`}
-                    disabled={tagsFiltro.includes(tag.nome)}
-                  >
-                    #{tag.nome} ({tag.count})
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          
           {/* Botão para limpar filtros */}
           {(termoBusca || categoriaFiltro || tagsFiltro.length > 0) && (
             <div className="mt-4 text-right">
@@ -427,6 +485,11 @@ export default function Explorar() {
                 userId={userId}
                 isFavorito={favoritos.includes(prompt.id)}
                 onToggleFavorito={handleToggleFavorito}
+                favoritosCount={favoritosContagem[prompt.id] || 0}
+                showActions={true}
+                showAuthor={true}
+                isOwner={userId === prompt.user_id}
+                onClickCard={() => exibirPrevia(prompt)}
               />
             ))}
           </div>

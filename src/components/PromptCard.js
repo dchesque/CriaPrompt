@@ -5,7 +5,6 @@ import { useRouter } from 'next/router';
 import { toast } from 'react-toastify';
 import { supabase } from '../lib/supabaseClient';
 import { 
-  FiCopy, 
   FiHeart, 
   FiEye, 
   FiEdit2, 
@@ -13,21 +12,35 @@ import {
   FiTag, 
   FiLock, 
   FiGlobe,
-  FiPlay
+  FiPlay,
+  FiX
 } from 'react-icons/fi';
 import { isPromptOwner } from '../utils/promptUtils';
+
+// Mapeamento de cores para categorias
+const categoriaCores = {
+  geral: 'from-blue-500 to-blue-600',
+  criativo: 'from-purple-500 to-purple-600',
+  academico: 'from-green-500 to-green-600',
+  profissional: 'from-orange-500 to-orange-600',
+  imagem: 'from-pink-500 to-pink-600',
+  codigo: 'from-gray-600 to-gray-700',
+  outro: 'from-indigo-500 to-indigo-600'
+};
 
 export default function PromptCard({ 
   prompt, 
   userId, 
   isFavorito, 
   onToggleFavorito,
+  favoritosCount = 0,
   showActions = true,
   showAuthor = true,
-  isOwner = false
+  isOwner = false,
+  onClickCard,
+  onClosePreview
 }) {
   // Bloco de estados
-  const [copiado, setCopiado] = useState(false);
   const [hovering, setHovering] = useState(false);
   const router = useRouter();
 
@@ -42,10 +55,21 @@ export default function PromptCard({
   // Ou verificar se tem padrão de #campo no texto
   const temCamposNoTexto = !temCamposPersonalizados && 
     /\#[a-zA-Z0-9]+/.test(prompt.texto);
+  
+  // Cor da categoria
+  const corCategoria = categoriaCores[prompt.categoria] || 'from-indigo-500 to-purple-500';
+  
+  // Categoria em maiúsculas
+  const categoriaUpper = prompt.categoria ? prompt.categoria.toUpperCase() : '';
     
   const navigateToPrompt = (e) => {
     e.preventDefault();
-    router.push(`/prompts/${prompt.id}`);
+    // Se temos uma função de clique no card, chamamos ela em vez de navegar
+    if (onClickCard) {
+      onClickCard(prompt);
+    } else {
+      router.push(`/prompts/${prompt.id}`);
+    }
   };
 
   const navigateToEdit = (e) => {
@@ -111,25 +135,6 @@ export default function PromptCard({
     }
   };
 
-  const copiarParaClipboard = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    try {
-      await navigator.clipboard.writeText(prompt.texto);
-      setCopiado(true);
-      toast.success('Copiado para a área de transferência!');
-      
-      // Reset do estado após 2 segundos
-      setTimeout(() => {
-        setCopiado(false);
-      }, 2000);
-    } catch (error) {
-      console.error('Erro ao copiar:', error);
-      toast.error('Não foi possível copiar o texto');
-    }
-  };
-
   const excluirPrompt = async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -184,17 +189,21 @@ export default function PromptCard({
     return parts[0];
   };
 
+  // Verificar se estamos no modo de previsualização (lightbox)
+  const isPreview = !!onClosePreview;
+
   return (
     <div 
-      className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer group h-full flex flex-col"
+      className={`bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer group h-full flex flex-col
+      ${isPreview ? 'max-w-3xl mx-auto' : ''}`}
       onMouseEnter={() => setHovering(true)} 
       onMouseLeave={() => setHovering(false)}
       onClick={navigateToPrompt}
     >
       {/* Cabeçalho do card */}
-      <div className="bg-gradient-to-r from-indigo-500 to-purple-500 p-3 text-white flex justify-between items-center">
+      <div className={`bg-gradient-to-r ${corCategoria} p-3 text-white flex justify-between items-center`}>
         <div className="flex items-center">
-          <span className="text-xs bg-white/20 px-2 py-1 rounded-full">{prompt.categoria}</span>
+          <span className="text-xs bg-white/20 px-2 py-1 rounded-full font-semibold">{categoriaUpper}</span>
           {prompt.publico !== undefined && (
             <span className="ml-2 text-xs flex items-center">
               {prompt.publico ? <FiGlobe size={12} className="mr-1" /> : <FiLock size={12} className="mr-1" />}
@@ -203,18 +212,32 @@ export default function PromptCard({
           )}
         </div>
         
-        {showActions && userId && (
+        {isPreview ? (
           <button
-            onClick={toggleFavorito}
-            className={`p-1.5 rounded-full ${
-              isFavorito 
-                ? 'bg-pink-500 text-white' 
-                : 'bg-white/20 hover:bg-white/30 text-white'
-            } transition-colors`}
-            aria-label={isFavorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClosePreview();
+            }}
+            className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors"
+            aria-label="Fechar prévia"
           >
-            <FiHeart size={16} className={isFavorito ? "fill-current" : ""} />
+            <FiX size={16} />
           </button>
+        ) : (
+          showActions && userId && (
+            <button
+              onClick={toggleFavorito}
+              className={`p-1.5 rounded-full ${
+                isFavorito 
+                  ? 'bg-red-500 text-white' 
+                  : 'bg-white/20 hover:bg-white/30 text-white'
+              } transition-colors`}
+              aria-label={isFavorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+            >
+              <FiHeart size={16} className={isFavorito ? "fill-current" : ""} />
+            </button>
+          )
         )}
       </div>
       
@@ -222,7 +245,9 @@ export default function PromptCard({
       <div className="p-4 flex-grow flex flex-col">
         <h3 className="font-semibold text-lg mb-2 text-gray-800 line-clamp-2">{prompt.titulo}</h3>
         
-        <p className="text-gray-700 mb-3 line-clamp-3">{limitarTexto(prompt.texto)}</p>
+        <p className={`text-gray-700 mb-3 ${isPreview ? '' : 'line-clamp-3'}`}>
+          {isPreview ? prompt.texto : limitarTexto(prompt.texto)}
+        </p>
         
         {/* Indicador de campos personalizáveis */}
         {(temCamposPersonalizados || temCamposNoTexto) && (
@@ -272,6 +297,9 @@ export default function PromptCard({
               <span className="flex items-center">
                 <FiEye size={12} className="mr-1" /> {prompt.views || 0}
               </span>
+              <span className="flex items-center">
+                <FiHeart size={12} className="mr-1" /> {favoritosCount || 0}
+              </span>
               {prompt.created_at && (
                 <span>
                   {new Date(prompt.created_at).toLocaleDateString()}
@@ -283,20 +311,33 @@ export default function PromptCard({
       </div>
       
       {/* Botões de ação */}
-      {showActions && (
+      {(showActions || isPreview) && (
         <div className={`p-3 bg-gray-50 border-t border-gray-100 flex justify-between items-center transition-all duration-300 ${hovering ? 'opacity-100' : 'opacity-80'}`}>
-          <button
-            onClick={copiarParaClipboard}
-            className="text-indigo-600 hover:text-indigo-800 text-sm px-2 py-1 rounded hover:bg-indigo-50 transition-colors flex items-center"
-          >
-            <FiCopy size={14} className="mr-1" />
-            {copiado ? 'Copiado!' : 'Copiar'}
-          </button>
+          {/* Favoritar (botão principal no modo preview) */}
+          {isPreview && (
+            <button
+              onClick={toggleFavorito}
+              className={`text-sm px-4 py-1.5 rounded-md flex items-center transition-colors
+                ${isFavorito 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+            >
+              <FiHeart size={16} className={`mr-1.5 ${isFavorito ? "fill-red-500" : ""}`} />
+              {isFavorito ? 'Favoritado' : 'Favoritar'}
+            </button>
+          )}
           
           <div className="flex space-x-2">
             {promptOwner ? (
               // Botões para o proprietário
               <>
+                <button
+                  onClick={utilizarPrompt}
+                  className="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-1.5 rounded-md transition-colors flex items-center shadow-sm"
+                >
+                  <FiPlay size={14} className="mr-1.5" />
+                  Usar Prompt
+                </button>
                 <button
                   onClick={navigateToEdit}
                   className="text-blue-600 hover:text-blue-800 cursor-pointer text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors flex items-center"
