@@ -9,7 +9,7 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiArrowLeft } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiArrowLeft, FiMagic } from 'react-icons/fi';
 
 // Bloco principal do componente
 export default function EditarPrompt() {
@@ -28,6 +28,9 @@ export default function EditarPrompt() {
   const [error, setError] = useState(null);
   const [userSession, setUserSession] = useState(null);
   const promptRef = useRef(null);
+  
+  // Estado para geração de descrição
+  const [gerandoDescricao, setGerandoDescricao] = useState(false);
   
   // Estados para campos personalizáveis
   const [camposPersonalizados, setCamposPersonalizados] = useState([]);
@@ -65,6 +68,42 @@ export default function EditarPrompt() {
       }
     });
     setPreviewPrompt(promptPreview);
+  };
+
+  // Função para gerar descrição automática
+  const gerarDescricao = async () => {
+    if (!prompt || prompt.trim() === '') {
+      toast.warning('Digite o texto do prompt primeiro');
+      return;
+    }
+    
+    setGerandoDescricao(true);
+    
+    try {
+      const response = await fetch('/api/groq/generate-description', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao gerar descrição');
+      }
+      
+      setDescricao(data.description);
+      toast.success('Descrição gerada com sucesso!');
+    } catch (error) {
+      console.error('Erro ao gerar descrição:', error);
+      toast.error('Falha ao gerar descrição automática');
+    } finally {
+      setGerandoDescricao(false);
+    }
   };
 
   // Buscar sessão do usuário
@@ -471,11 +510,22 @@ export default function EditarPrompt() {
                     </div>
                   </div>
 
-                  {/* Novo campo para descrição */}
+                  {/* Campo de descrição modificado com botão de geração automática */}
                   <div>
-                    <label htmlFor="descricao" className="block text-gray-700 font-medium mb-2">
-                      Descrição
-                    </label>
+                    <div className="flex justify-between items-center mb-2">
+                      <label htmlFor="descricao" className="block text-gray-700 font-medium">
+                        Descrição
+                      </label>
+                      <button
+                        type="button"
+                        onClick={gerarDescricao}
+                        disabled={gerandoDescricao || !prompt}
+                        className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <FiMagic className="mr-1" />
+                        {gerandoDescricao ? 'Gerando...' : 'Gerar descrição automática'}
+                      </button>
+                    </div>
                     <textarea
                       id="descricao"
                       value={descricao}
