@@ -9,7 +9,8 @@ import { useRouter } from 'next/router';
 import { supabase } from '../../../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiArrowLeft, FiMagic } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiArrowLeft } from 'react-icons/fi';
+import { FaWandMagicSparkles } from "react-icons/fa6";
 
 // Bloco principal do componente
 export default function EditarPrompt() {
@@ -70,41 +71,52 @@ export default function EditarPrompt() {
     setPreviewPrompt(promptPreview);
   };
 
-  // Função para gerar descrição automática
-  const gerarDescricao = async () => {
-    if (!prompt || prompt.trim() === '') {
-      toast.warning('Digite o texto do prompt primeiro');
-      return;
+// Função para gerar descrição automática
+const gerarDescricao = async () => {
+  if (!prompt || prompt.trim() === '') {
+    toast.warning('Digite o texto do prompt primeiro');
+    return;
+  }
+  
+  setGerandoDescricao(true);
+  
+  try {
+    // Obter o token de autenticação atual
+    const { data: authData } = await supabase.auth.getSession();
+    
+    if (!authData.session) {
+      throw new Error('Sessão expirada. Faça login novamente.');
     }
     
-    setGerandoDescricao(true);
+    const token = authData.session.access_token;
     
-    try {
-      const response = await fetch('/api/groq/generate-description', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: prompt
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao gerar descrição');
-      }
-      
-      setDescricao(data.description);
-      toast.success('Descrição gerada com sucesso!');
-    } catch (error) {
-      console.error('Erro ao gerar descrição:', error);
-      toast.error('Falha ao gerar descrição automática');
-    } finally {
-      setGerandoDescricao(false);
+    const response = await fetch('/api/groq/generate-description', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}` // Adicionar token no header
+      },
+      credentials: 'include', // Incluir cookies
+      body: JSON.stringify({
+        prompt: prompt
+      }),
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'Erro ao gerar descrição');
     }
-  };
+    
+    setDescricao(data.description);
+    toast.success('Descrição gerada com sucesso!');
+  } catch (error) {
+    console.error('Erro ao gerar descrição:', error);
+    toast.error('Falha ao gerar descrição automática: ' + error.message);
+  } finally {
+    setGerandoDescricao(false);
+  }
+};
 
   // Buscar sessão do usuário
   useEffect(() => {
@@ -522,7 +534,7 @@ export default function EditarPrompt() {
                         disabled={gerandoDescricao || !prompt}
                         className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <FiMagic className="mr-1" />
+                        <FaWandMagicSparkles className="mr-1" />
                         {gerandoDescricao ? 'Gerando...' : 'Gerar descrição automática'}
                       </button>
                     </div>

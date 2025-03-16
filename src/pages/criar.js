@@ -8,8 +8,9 @@ import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { HexColorPicker } from 'react-colorful';
-import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiMagic } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave } from 'react-icons/fi';
+import { FaWandMagicSparkles } from "react-icons/fa6";
+
 
 export default function CriarPrompt() {
   const router = useRouter();
@@ -418,7 +419,7 @@ useEffect(() => {
                       disabled={gerandoDescricao || !prompt}
                       className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <FiMagic className="mr-1" />
+                      <FaWandMagicSparkles className="mr-1" />
                       {gerandoDescricao ? 'Gerando...' : 'Gerar descrição automática'}
                     </button>
                   </div>

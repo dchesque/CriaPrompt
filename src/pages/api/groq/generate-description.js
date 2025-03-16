@@ -7,11 +7,43 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido' });
   }
 
-  // Verificar autenticação
-  const { data: { session } } = await supabase.auth.getSession();
-  
-  if (!session) {
-    return res.status(401).json({ error: 'Não autorizado' });
+  // Verificar autenticação via cookie de sessão ou token de autorização
+  let userId = null;
+  try {
+    // Verificar se há um token de autorização no cabeçalho
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      
+      // Usar o token para obter o usuário
+      const { data, error } = await supabase.auth.getUser(token);
+      if (error) {
+        console.error('Erro ao validar token:', error);
+        return res.status(401).json({ error: 'Token inválido' });
+      }
+      
+      if (data?.user) {
+        userId = data.user.id;
+      }
+    } else {
+      // Tentar obter a sessão pelo cookie
+      const { data: { session }, error } = await supabase.auth.getSession({
+        req: req
+      });
+      
+      if (error) {
+        console.error('Erro ao obter sessão:', error);
+      } else if (session?.user) {
+        userId = session.user.id;
+      }
+    }
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'Não autorizado' });
+    }
+  } catch (authError) {
+    console.error('Erro na autenticação:', authError);
+    return res.status(401).json({ error: 'Erro na autenticação' });
   }
 
   try {
@@ -28,28 +60,54 @@ export default async function handler(req, res) {
     }
 
     // Chama a API do Groq
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${groqApiKey}`
+    // src/pages/api/groq/generate-description.js
+// Atualizando a parte de instruções para o modelo
+
+// Na seção onde chamamos a API do Groq, vou modificar o conteúdo da mensagem do sistema
+const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${groqApiKey}`
+  },
+  body: JSON.stringify({
+    model: 'llama3-8b-8192', // Modelo do Groq
+    messages: [
+      {
+        role: 'system',
+        content: `Você é um especialista em criar descrições concisas e atraentes para prompts de IA.
+        
+        INSTRUÇÕES DE FORMATAÇÃO:
+        - Escreva SEMPRE em português brasileiro
+        - Comece a descrição com "Este prompt" ou "Um prompt que"
+        - Use linguagem direta e objetiva
+        - Limite a resposta a 100-120 caracteres (aproximadamente 1-2 frases curtas)
+        - Foque no PROPÓSITO principal do prompt, não em detalhes técnicos
+        - NÃO use frases como "Este é um prompt" ou "Este prompt foi criado para"
+        - NÃO inclua informações sobre tokens, modelos ou limitações técnicas
+        - Mantenha um tom profissional mas acessível
+        - NÃO use emojis ou símbolos especiais
+        - Não repoduza nomes de apps, objetos, entre outras coisas semelhantes.
+        - Se o prompt houver nomes com # antes (exemplo #sobreoapp), nao inclua essas palavras após a # na descrição
+        - Termine com ponto final
+      
+        
+        EXEMPLO DE FORMATO DESEJADO:
+        "Este prompt ajuda a criar resumos concisos de artigos científicos mantendo os pontos principais."
+        "Um prompt que transforma textos técnicos em explicações simples para leigos."
+        "Este prompt ajuda a criar um aplicatico com paginas de contato, ia integrada, banco de dados supabase."
+        
+        Sua resposta deve conter APENAS a descrição, sem introdução ou explicação adicional.`
       },
-      body: JSON.stringify({
-        model: 'llama3-8b-8192', // Modelo do Groq
-        messages: [
-          {
-            role: 'system',
-            content: 'Você é um assistente especializado em criar descrições concisas e claras. Crie uma descrição objetiva em português explicando o que o prompt faz, limitando a resposta a 1-2 frases curtas.'
-          },
-          {
-            role: 'user',
-            content: `Crie uma descrição concisa para este prompt: "${prompt}"`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 150
-      })
-    });
+      {
+        role: 'user',
+        content: `Crie uma descrição concisa para este prompt: "${prompt}"`
+      }
+    ],
+    temperature: 0.7,
+    max_tokens: 150
+  })
+});
 
     const data = await response.json();
     

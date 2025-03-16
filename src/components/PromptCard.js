@@ -17,6 +17,7 @@ import {
 } from 'react-icons/fi';
 import { isPromptOwner } from '../utils/promptUtils';
 
+
 // Mapeamento de cores para categorias
 const categoriaCores = {
   geral: 'from-blue-500 to-blue-600',
@@ -365,10 +366,14 @@ export default function PromptCard({
                 <FiPlay size={14} className="mr-1.5" />
                 Usar Prompt
               </button>
+            
             )}
           </div>
         </div>
+        
       )}
+
+      
     </div>
   );
 }
