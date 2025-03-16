@@ -1,3 +1,4 @@
+// src/pages/prompts/editar/[id].js
 import Head from 'next/head';
 import Header from '../../../components/Header';
 import AuthGuard from '../../../components/AuthGuard';
@@ -59,50 +60,61 @@ export default function EditarPrompt() {
     setPreviewPrompt(promptPreview);
   };
 
+  // Buscar sessão do usuário
   useEffect(() => {
     const fetchSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUserSession(session);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!session) {
+          // Se não houver sessão, redirecionar para login
+          router.push('/auth/login?redirect=/prompts/editar/' + id);
+          return;
+        }
+        
+        setUserSession(session);
+      } catch (error) {
+        console.error('Erro ao buscar sessão:', error);
+        router.push('/auth/login?redirect=/prompts/editar/' + id);
+      }
     };
     
     fetchSession();
-  }, []);
+  }, [router, id]);
 
+  // Carregar prompt para edição
   useEffect(() => {
     const carregarPrompt = async () => {
-      if (!id) return;
+      // Se não tiver ID ou sessão, não carregar
+      if (!id || !userSession) return;
 
       try {
         setLoading(true);
-        
-        // Verificar sessão
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          router.push('/auth/login');
-          return;
-        }
+        setError(null);
         
         console.log("Carregando prompt para edição. ID:", id);
-        console.log("Usuário autenticado:", session.user.id);
+        console.log("Usuário autenticado:", userSession.user.id);
         
-        // Fazer uma consulta direta via API para buscar o prompt
-        const response = await fetch(`/api/prompts/${id}`);
+        // Buscar o prompt diretamente via Supabase para garantir acesso
+        const { data: promptData, error: promptError } = await supabase
+          .from('prompts')
+          .select('*')
+          .eq('id', id)
+          .eq('user_id', userSession.user.id)
+          .single();
         
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Prompt não encontrado');
-          } else if (response.status === 403) {
-            setError('Você não tem permissão para editar este prompt');
+        if (promptError) {
+          console.error('Erro ao buscar prompt:', promptError);
+          
+          if (promptError.code === 'PGRST116') {
+            setError('Prompt não encontrado ou você não tem permissão para editá-lo.');
           } else {
-            const data = await response.json();
-            setError(data.error || 'Erro ao carregar prompt');
+            setError(`Erro ao buscar prompt: ${promptError.message}`);
           }
-          setLoading(false);
+          
           return;
         }
         
-        const promptData = await response.json();
-
         // Preencher os campos do formulário com os dados existentes
         setTitulo(promptData.titulo);
         setPrompt(promptData.texto);
@@ -135,17 +147,14 @@ export default function EditarPrompt() {
         }
       } catch (error) {
         console.error('Erro ao carregar prompt:', error);
-        setError('Não foi possível carregar este prompt.');
+        setError('Não foi possível carregar este prompt. ' + error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    if (id) {
-      carregarPrompt();
-    }
-  }, [id, router]);
-
+    carregarPrompt();
+  }, [id, userSession, router]);
   // Função para buscar sugestões de tags ao digitar
   const buscarSugestoesTags = async (valor) => {
     if (!valor.trim()) {
@@ -301,7 +310,16 @@ export default function EditarPrompt() {
     setError(null);
   
     try {
-      // Obter a sessão atual para pegar o token de acesso
+      // Validações básicas
+      if (!titulo.trim()) {
+        throw new Error('O título é obrigatório');
+      }
+      
+      if (!prompt.trim()) {
+        throw new Error('O texto do prompt é obrigatório');
+      }
+  
+      // Obter o token de autenticação atual
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session) {
@@ -309,71 +327,70 @@ export default function EditarPrompt() {
       }
   
       const token = session.access_token;
+      
+      console.log("Dados a serem enviados:", {
+        titulo,
+        texto: prompt,
+        categoria,
+        publico: isPublico,
+        tags,
+        campos_personalizados: camposPersonalizados
+      });
   
+      // Fazer a requisição para a API
       const response = await fetch(`/api/prompts/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` // Adicionar token de autorização
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          titulo,
-          texto: prompt,
+          titulo: titulo.trim(),
+          texto: prompt.trim(),
           categoria,
           publico: isPublico,
-          tags: tags,
-          campos_personalizados: camposPersonalizados
-        }),
+          tags: Array.isArray(tags) ? tags : [],
+          campos_personalizados: camposPersonalizados.length > 0 
+            ? camposPersonalizados.map(campo => ({
+                nome: campo.nome,
+                descricao: campo.descricao || '',
+                valorPadrao: campo.valorPadrao || ''
+              }))
+            : null
+        })
       });
   
-      // Log da resposta completa
-      console.log('Resposta da API:', {
-        status: response.status,
-        statusText: response.statusText
-      });
-  
-      const responseData = await response.json();
-  
-      // Log dos dados da resposta
-      console.log('Dados da resposta:', responseData);
-  
+      // Verificar o status da resposta
       if (!response.ok) {
-        console.error("Erro na resposta da API:", response.status, responseData);
+        const errorData = await response.json();
+        console.error('Erro na resposta:', response.status, errorData);
         
-        // Se for erro de autorização, redirecionar para login
-        if (response.status === 401) {
-          toast.error('Sessão expirada. Faça login novamente.');
-          setTimeout(() => {
+        // Tratar erros específicos
+        switch (response.status) {
+          case 401:
+            toast.error("Sessão expirada. Faça login novamente.");
             router.push('/auth/login');
-          }, 1500);
-          return;
+            return;
+          case 403:
+            throw new Error('Você não tem permissão para editar este prompt.');
+          case 404:
+            throw new Error('Prompt não encontrado.');
+          default:
+            throw new Error(errorData.error || 'Erro ao atualizar prompt');
         }
-  
-        throw new Error(responseData.error || 'Erro ao atualizar prompt');
       }
   
-      // Verificação adicional dos dados retornados
-      if (!responseData || !responseData.id) {
-        console.error('Resposta da API não contém dados válidos', responseData);
-        throw new Error('Não foi possível atualizar o prompt');
-      }
-  
+      // Processamento bem-sucedido
+      const responseData = await response.json();
+      
       toast.success('Prompt atualizado com sucesso!');
       setTimeout(() => {
         router.push('/dashboard');
       }, 1500);
     } catch (error) {
-      console.error('Erro completo ao atualizar prompt:', error);
-      
-      // Verificar se é um erro de sessão expirada
-      if (error.message.includes('sessão')) {
-        toast.error('Sessão expirada. Faça login novamente.');
-        setTimeout(() => {
-          router.push('/auth/login');
-        }, 1500);
-      } else {
-        setError(error.message || 'Falha ao atualizar o prompt. Por favor, tente novamente.');
-      }
+      console.error('Erro ao atualizar prompt:', error);
+      setError(error.message || 'Falha ao atualizar o prompt. Por favor, tente novamente.');
+      toast.error(error.message || 'Falha ao atualizar o prompt');
     } finally {
       setSaving(false);
     }
