@@ -19,6 +19,8 @@ export default function EditarPrompt() {
   // Bloco de estados
   const [titulo, setTitulo] = useState('');
   const [prompt, setPrompt] = useState('');
+  // Estado para o campo de descrição
+  const [descricao, setDescricao] = useState('');
   const [categoria, setCategoria] = useState('geral');
   const [isPublico, setIsPublico] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -123,6 +125,8 @@ export default function EditarPrompt() {
         // Preencher os campos do formulário com os dados existentes
         setTitulo(promptData.titulo);
         setPrompt(promptData.texto);
+        // Carregando o campo de descrição (com fallback para string vazia se for null)
+        setDescricao(promptData.descricao || '');
         setCategoria(promptData.categoria);
         setIsPublico(promptData.publico);
         setTags(promptData.tags || []);
@@ -336,6 +340,7 @@ export default function EditarPrompt() {
       const dadosAtualizacao = {
         titulo: titulo.trim(),
         texto: prompt.trim(),
+        descricao: descricao.trim(), // Incluindo o campo de descrição
         categoria,
         publico: isPublico,
         tags: Array.isArray(tags) ? tags : [],
@@ -464,6 +469,24 @@ export default function EditarPrompt() {
                         <option value="outro">Outro</option>
                       </select>
                     </div>
+                  </div>
+
+                  {/* Novo campo para descrição */}
+                  <div>
+                    <label htmlFor="descricao" className="block text-gray-700 font-medium mb-2">
+                      Descrição
+                    </label>
+                    <textarea
+                      id="descricao"
+                      value={descricao}
+                      onChange={(e) => setDescricao(e.target.value)}
+                      rows={3}
+                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                      placeholder="Adicione uma breve descrição sobre o que esse prompt faz"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Uma boa descrição ajuda outros usuários a entenderem o propósito do seu prompt
+                    </p>
                   </div>
 
                   <div>

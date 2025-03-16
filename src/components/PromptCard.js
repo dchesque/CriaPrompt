@@ -167,6 +167,7 @@ export default function PromptCard({
 
   // Limite de caracteres para exibição do texto
   const limitarTexto = (texto, limite = 120) => {
+    if (!texto) return '';
     if (texto.length <= limite) return texto;
     return texto.substring(0, limite) + '...';
   };
@@ -191,6 +192,9 @@ export default function PromptCard({
 
   // Verificar se estamos no modo de previsualização (lightbox)
   const isPreview = !!onClosePreview;
+  
+  // Determinar o conteúdo a ser exibido - priorizar descrição quando disponível
+  const conteudoExibido = prompt.descricao ? prompt.descricao : prompt.texto;
 
   return (
     <div 
@@ -245,8 +249,9 @@ export default function PromptCard({
       <div className="p-4 flex-grow flex flex-col">
         <h3 className="font-semibold text-lg mb-2 text-gray-800 line-clamp-2">{prompt.titulo}</h3>
         
+        {/* Exibir descrição se disponível, senão exibir o texto do prompt */}
         <p className={`text-gray-700 mb-3 ${isPreview ? '' : 'line-clamp-3'}`}>
-          {isPreview ? prompt.texto : limitarTexto(prompt.texto)}
+          {isPreview ? conteudoExibido : limitarTexto(conteudoExibido)}
         </p>
         
         {/* Indicador de campos personalizáveis */}

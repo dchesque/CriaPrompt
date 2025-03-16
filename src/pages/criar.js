@@ -1,3 +1,5 @@
+// src/pages/criar.js
+
 import Head from 'next/head';
 import Header from '../components/Header';
 import AuthGuard from '../components/AuthGuard';
@@ -13,6 +15,8 @@ export default function CriarPrompt() {
   const router = useRouter();
   const [titulo, setTitulo] = useState('');
   const [prompt, setPrompt] = useState('');
+  // Estado para o novo campo de descrição
+  const [descricao, setDescricao] = useState('');
   const [categoria, setCategoria] = useState('geral');
   const [isPublico, setIsPublico] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -270,6 +274,7 @@ useEffect(() => {
         .insert({
           titulo: titulo,
           texto: prompt,
+          descricao: descricao, // Adicionando o novo campo descrição
           categoria: categoria,
           publico: isPublico,
           user_id: user.id,
@@ -360,6 +365,24 @@ useEffect(() => {
                       <option value="outro">Outro</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Novo campo para descrição */}
+                <div>
+                  <label htmlFor="descricao" className="block text-gray-700 font-medium mb-2">
+                    Descrição
+                  </label>
+                  <textarea
+                    id="descricao"
+                    value={descricao}
+                    onChange={(e) => setDescricao(e.target.value)}
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
+                    placeholder="Adicione uma breve descrição sobre o que esse prompt faz"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Uma boa descrição ajuda outros usuários a entenderem o propósito do seu prompt
+                  </p>
                 </div>
 
                 <div>
