@@ -1,11 +1,15 @@
+// src/pages/explorar.js
 import Head from 'next/head';
 import Header from '../components/Header';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useRouter } from 'next/router';
 import PromptCard from '../components/PromptCard';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 export default function Explorar() {
+  // Bloco de estados
   const router = useRouter();
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -96,13 +100,11 @@ export default function Explorar() {
   const carregarDados = async (tags = tagsFiltro, categoria = categoriaFiltro, termo = termoBusca) => {
     try {
       setLoading(true);
-      console.log("Carregando prompts públicos...");
       
       // Verificar sessão do usuário
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id;
       setUserId(currentUserId);
-      console.log("Usuário autenticado:", currentUserId ? "Sim" : "Não");
 
       // Carregar tags populares se ainda não carregou
       if (tagsPopulares.length === 0) {
@@ -117,10 +119,7 @@ export default function Explorar() {
         }
       }
 
-      // Carregar prompts públicos - Consulta simplificada
-      console.log("Executando consulta de prompts públicos");
-      
-      // Construir consulta com filtros
+      // Construir consulta com filtros - modificada para não usar relacionamento users
       let query = supabase
         .from('prompts')
         .select(`
@@ -131,6 +130,7 @@ export default function Explorar() {
           created_at,
           views,
           tags,
+          campos_personalizados,
           user_id,
           publico
         `)
@@ -154,11 +154,9 @@ export default function Explorar() {
       const { data: promptsData, error: promptsError } = await query;
 
       if (promptsError) {
-        console.error("Erro na consulta:", promptsError);
         throw promptsError;
       }
       
-      console.log(`Prompts encontrados: ${promptsData?.length || 0}`);
       setPrompts(promptsData || []);
 
       // Se usuário estiver logado, carregar seus favoritos
@@ -169,13 +167,13 @@ export default function Explorar() {
           .eq('user_id', currentUserId);
 
         if (favoritosError) {
-          console.error("Erro ao buscar favoritos:", favoritosError);
           throw favoritosError;
         }
         setFavoritos(favoritosData?.map(f => f.prompt_id) || []);
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
+      toast.error('Erro ao carregar prompts');
     } finally {
       setLoading(false);
     }
@@ -191,7 +189,7 @@ export default function Explorar() {
 
   const handleToggleFavorito = async (promptId) => {
     if (!userId) {
-      alert('Você precisa estar logado para adicionar favoritos');
+      toast.info('Você precisa estar logado para adicionar favoritos');
       return;
     }
 
@@ -205,6 +203,7 @@ export default function Explorar() {
           .eq('user_id', userId);
           
         setFavoritos(favoritos.filter(id => id !== promptId));
+        toast.success('Removido dos favoritos');
       } else {
         // Adicionar aos favoritos
         const { error } = await supabase
@@ -213,22 +212,19 @@ export default function Explorar() {
 
         if (error) {
           if (error.code === '23505') { // Violação de restrição única
-            alert('Este prompt já está nos seus favoritos');
+            toast.info('Este prompt já está nos seus favoritos');
           } else {
             throw error;
           }
         } else {
           setFavoritos([...favoritos, promptId]);
+          toast.success('Adicionado aos favoritos');
         }
       }
     } catch (error) {
       console.error('Erro ao atualizar favorito:', error);
-      alert('Erro ao atualizar favorito');
+      toast.error('Erro ao atualizar favorito');
     }
-  };
-
-  const navegarParaPrompt = (promptId) => {
-    router.push(`/prompts/${promptId}`);
   };
 
   const limparFiltros = () => {
@@ -246,6 +242,8 @@ export default function Explorar() {
       </Head>
 
       <Header />
+      
+      <ToastContainer position="top-right" autoClose={3000} />
 
       <main className="container-app py-10">
         <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
@@ -423,82 +421,13 @@ export default function Explorar() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {prompts.map((prompt) => (
-              <div 
+              <PromptCard 
                 key={prompt.id}
-                className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow duration-300"
-                onClick={() => navegarParaPrompt(prompt.id)}
-              >
-                <div className="flex justify-between items-start mb-4">
-                  <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
-                    {prompt.categoria}
-                  </span>
-                  {userId && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleToggleFavorito(prompt.id);
-                      }}
-                      className={`${
-                        favoritos.includes(prompt.id)
-                          ? 'text-red-500'
-                          : 'text-gray-400 hover:text-red-500'
-                      }`}
-                    >
-                      ❤️
-                    </button>
-                  )}
-                </div>
-                <h3 className="font-semibold text-lg mb-2">{prompt.titulo}</h3>
-                <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
-                
-                {/* Exibição de tags */}
-                {prompt.tags && prompt.tags.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-1.5">
-                    {prompt.tags.slice(0, 3).map((tag, index) => (
-                      <span 
-                        key={index}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          adicionarTag(tag);
-                        }}
-                        className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full hover:bg-gray-200 cursor-pointer"
-                      >
-                        #{tag}
-                      </span>
-                    ))}
-                    {prompt.tags.length > 3 && (
-                      <span className="text-xs text-gray-500">
-                        +{prompt.tags.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-                
-                <div className="flex justify-between items-center">
-                  <span className="text-xs text-gray-500">
-                    Por: {prompt.user_email || 'Usuário'}
-                  </span>
-                  <div className="flex items-center space-x-3">
-                    <span className="text-xs text-gray-500">
-                      👁️ {prompt.views || 0}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(prompt.texto)
-                          .then(() => alert('Copiado para a área de transferência!'))
-                          .catch(err => {
-                            console.error('Erro ao copiar:', err);
-                            alert('Não foi possível copiar o texto');
-                          });
-                      }}
-                      className="text-indigo-600 hover:text-indigo-800"
-                    >
-                      Copiar
-                    </button>
-                  </div>
-                </div>
-              </div>
+                prompt={prompt}
+                userId={userId}
+                isFavorito={favoritos.includes(prompt.id)}
+                onToggleFavorito={handleToggleFavorito}
+              />
             ))}
           </div>
         )}

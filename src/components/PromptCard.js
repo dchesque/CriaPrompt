@@ -1,3 +1,4 @@
+// src/components/PromptCard.js
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -11,7 +12,8 @@ import {
   FiTrash2, 
   FiTag, 
   FiLock, 
-  FiGlobe
+  FiGlobe,
+  FiPlay
 } from 'react-icons/fi';
 import { isPromptOwner } from '../utils/promptUtils';
 
@@ -24,6 +26,7 @@ export default function PromptCard({
   showAuthor = true,
   isOwner = false
 }) {
+  // Bloco de estados
   const [copiado, setCopiado] = useState(false);
   const [hovering, setHovering] = useState(false);
   const router = useRouter();
@@ -308,15 +311,13 @@ export default function PromptCard({
                 </button>
               </>
             ) : (
-              // Botão para usuários não proprietários
+              // Botão "Usar prompt" para usuários não proprietários
               <button
                 onClick={utilizarPrompt}
-                className="text-green-600 hover:text-green-800 text-sm px-2 py-1 rounded hover:bg-green-50 transition-colors flex items-center"
+                className="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-1.5 rounded-md transition-colors flex items-center shadow-sm"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Utilizar
+                <FiPlay size={14} className="mr-1.5" />
+                Usar Prompt
               </button>
             )}
           </div>
