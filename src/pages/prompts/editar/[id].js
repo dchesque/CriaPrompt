@@ -1,4 +1,6 @@
 // src/pages/prompts/editar/[id].js
+
+// Bloco de importações
 import Head from 'next/head';
 import Header from '../../../components/Header';
 import AuthGuard from '../../../components/AuthGuard';
@@ -9,10 +11,12 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave, FiArrowLeft } from 'react-icons/fi';
 
+// Bloco principal do componente
 export default function EditarPrompt() {
   const router = useRouter();
   const { id } = router.query;
 
+  // Bloco de estados
   const [titulo, setTitulo] = useState('');
   const [prompt, setPrompt] = useState('');
   const [categoria, setCategoria] = useState('geral');
@@ -23,7 +27,7 @@ export default function EditarPrompt() {
   const [userSession, setUserSession] = useState(null);
   const promptRef = useRef(null);
   
-  // Novos estados para campos personalizáveis
+  // Estados para campos personalizáveis
   const [camposPersonalizados, setCamposPersonalizados] = useState([]);
   const [mostrarAddCampo, setMostrarAddCampo] = useState(false);
   const [novoCampoNome, setNovoCampoNome] = useState('');
@@ -40,6 +44,7 @@ export default function EditarPrompt() {
   const [previewPrompt, setPreviewPrompt] = useState('');
   const [mostrarPreview, setMostrarPreview] = useState(false);
 
+  // Bloco de efeitos
   // Efeito para atualizar a previsualização do prompt
   useEffect(() => {
     atualizarPreview();
@@ -155,6 +160,7 @@ export default function EditarPrompt() {
 
     carregarPrompt();
   }, [id, userSession, router]);
+
   // Função para buscar sugestões de tags ao digitar
   const buscarSugestoesTags = async (valor) => {
     if (!valor.trim()) {
@@ -227,6 +233,7 @@ export default function EditarPrompt() {
     }
   };
   
+  // Bloco de funções de manipulação de campos
   // Adicionar campo personalizado
   const adicionarCampoPersonalizado = () => {
     if (!novoCampoNome) {
@@ -242,7 +249,7 @@ export default function EditarPrompt() {
       return;
     }
     
-    // CORREÇÃO: Adicionar explicitamente o novo campo ao array existente
+    // Adicionar explicitamente o novo campo ao array existente
     const novosCampos = [
       ...camposPersonalizados,
       {
@@ -253,7 +260,7 @@ export default function EditarPrompt() {
     ];
     
     setCamposPersonalizados(novosCampos);
-    console.log("Campos atualizados:", novosCampos); // Adicionar log para debug
+    console.log("Campos atualizados:", novosCampos);
     
     // Adicionar o campo ao texto do prompt
     if (!prompt.includes(`#${nomeCampo}`)) {
@@ -272,7 +279,7 @@ export default function EditarPrompt() {
     const campoRemovido = camposPersonalizados[index];
     const novosCampos = camposPersonalizados.filter((_, i) => i !== index);
     setCamposPersonalizados(novosCampos);
-    console.log("Campos após remoção:", novosCampos); // Adicionar log para debug
+    console.log("Campos após remoção:", novosCampos);
   };
   
   // Inserir campo no prompt
@@ -303,7 +310,8 @@ export default function EditarPrompt() {
     });
   };
 
-  // Função de envio do formulário com as correções
+  // Bloco de funções de submissão
+  // MÉTODO ATUALIZADO: Salvar diretamente no Supabase sem usar a API
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -319,71 +327,52 @@ export default function EditarPrompt() {
         throw new Error('O texto do prompt é obrigatório');
       }
   
-      // Obter o token de autenticação atual
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
+      // Verificar se a sessão ainda é válida
+      if (!userSession) {
         throw new Error('Sessão expirada. Faça login novamente.');
       }
   
-      const token = session.access_token;
-      
-      console.log("Dados a serem enviados:", {
-        titulo,
-        texto: prompt,
+      // Preparar dados para atualização
+      const dadosAtualizacao = {
+        titulo: titulo.trim(),
+        texto: prompt.trim(),
         categoria,
         publico: isPublico,
-        tags,
-        campos_personalizados: camposPersonalizados
-      });
+        tags: Array.isArray(tags) ? tags : [],
+        campos_personalizados: camposPersonalizados.length > 0 
+          ? camposPersonalizados.map(campo => ({
+              nome: campo.nome,
+              descricao: campo.descricao || '',
+              valorPadrao: campo.valorPadrao || ''
+            }))
+          : null,
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log("Dados a serem atualizados:", dadosAtualizacao);
+      
+      // Atualizar diretamente no Supabase
+      const { data, error } = await supabase
+        .from('prompts')
+        .update(dadosAtualizacao)
+        .eq('id', id)
+        .eq('user_id', userSession.user.id)
+        .select();
   
-      // Fazer a requisição para a API
-      const response = await fetch(`/api/prompts/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          titulo: titulo.trim(),
-          texto: prompt.trim(),
-          categoria,
-          publico: isPublico,
-          tags: Array.isArray(tags) ? tags : [],
-          campos_personalizados: camposPersonalizados.length > 0 
-            ? camposPersonalizados.map(campo => ({
-                nome: campo.nome,
-                descricao: campo.descricao || '',
-                valorPadrao: campo.valorPadrao || ''
-              }))
-            : null
-        })
-      });
-  
-      // Verificar o status da resposta
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Erro na resposta:', response.status, errorData);
-        
-        // Tratar erros específicos
-        switch (response.status) {
-          case 401:
-            toast.error("Sessão expirada. Faça login novamente.");
-            router.push('/auth/login');
-            return;
-          case 403:
-            throw new Error('Você não tem permissão para editar este prompt.');
-          case 404:
-            throw new Error('Prompt não encontrado.');
-          default:
-            throw new Error(errorData.error || 'Erro ao atualizar prompt');
-        }
+      if (error) {
+        console.error('Erro ao atualizar no Supabase:', error);
+        throw new Error(`Erro ao atualizar prompt: ${error.message}`);
       }
   
-      // Processamento bem-sucedido
-      const responseData = await response.json();
+      console.log("Resposta do Supabase:", data);
+      
+      if (!data || data.length === 0) {
+        throw new Error('Nenhuma alteração foi aplicada. Verifique se você tem permissão para editar este prompt.');
+      }
       
       toast.success('Prompt atualizado com sucesso!');
+      
+      // Aguardar um pouco para garantir que o toast seja exibido
       setTimeout(() => {
         router.push('/dashboard');
       }, 1500);
@@ -396,6 +385,7 @@ export default function EditarPrompt() {
     }
   };
 
+  // Bloco de renderização
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
