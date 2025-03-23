@@ -1,6 +1,5 @@
 // src/pages/explorar.js
 import Head from 'next/head';
-import Header from '../components/Header';
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { useRouter } from 'next/router';
@@ -8,24 +7,37 @@ import PromptCard from '../components/PromptCard';
 import PromptPreview from '../components/PromptPreview';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import { Search, Filter, Clock, ArrowUpDown, Plus } from 'lucide-react';
+import { SidebarNav } from '../components/SidebarNav';
+import { Button } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
+import AuthGuard from '../components/AuthGuard';
+import DashboardLayout from '../components/layouts/DashboardLayout';
 
 export default function Explorar() {
-  // Bloco de estados
   const router = useRouter();
+  const { q: queryParam, categoria: categoriaParam, ordenacao: ordenacaoParam } = router.query;
+  
+  // Estados unificados
+  const [session, setSession] = useState(null);
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [categoriaFiltro, setCategoriaFiltro] = useState('');
-  const [termoBusca, setTermoBusca] = useState('');
-  const [userId, setUserId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
+  const [ordenacao, setOrdenacao] = useState('recentes');
   const [favoritos, setFavoritos] = useState([]);
+  const [categorias, setCategorias] = useState([]);
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [totalPrompts, setTotalPrompts] = useState(0);
+  const [userId, setUserId] = useState(null);
   const [tagsFiltro, setTagsFiltro] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [sugestoesTags, setSugestoesTags] = useState([]);
   const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
-  
-  // Estados para a prévia do prompt
   const [promptSelecionado, setPromptSelecionado] = useState(null);
   const [favoritosContagem, setFavoritosContagem] = useState({});
+  const promptsPorPagina = 12;
 
   // Função para exibir a prévia do prompt
   const exibirPrevia = async (prompt) => {
@@ -122,7 +134,7 @@ export default function Explorar() {
     setSugestoesTags([]);
     
     // Recarregar prompts ao adicionar tag
-    carregarDados([...tagsFiltro, tagFormatada], categoriaFiltro, termoBusca);
+    carregarDados([...tagsFiltro, tagFormatada], categoriaFiltro, searchQuery);
   };
 
   // Remover tag
@@ -131,7 +143,7 @@ export default function Explorar() {
     setTagsFiltro(novasTags);
     
     // Recarregar prompts ao remover tag
-    carregarDados(novasTags, categoriaFiltro, termoBusca);
+    carregarDados(novasTags, categoriaFiltro, searchQuery);
   };
 
   // Lidar com tecla Enter no input de tags
@@ -142,7 +154,7 @@ export default function Explorar() {
     }
   };
 
-  const carregarDados = async (tags = tagsFiltro, categoria = categoriaFiltro, termo = termoBusca) => {
+  const carregarDados = async (tags = tagsFiltro, categoria = categoriaFiltro, termo = searchQuery) => {
     try {
       setLoading(true);
       
@@ -150,6 +162,7 @@ export default function Explorar() {
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id;
       setUserId(currentUserId);
+      setSession(session);
 
       // Construir consulta com filtros
       let query = supabase
@@ -168,7 +181,7 @@ export default function Explorar() {
         `)
         .eq('publico', true);
 
-      if (categoria) {
+      if (categoria && categoria !== 'todas') {
         query = query.eq('categoria', categoria);
       }
 
@@ -180,16 +193,43 @@ export default function Explorar() {
         query = query.contains('tags', tags);
       }
       
-      // Ordenar por data de criação (mais recentes primeiro)
-      query = query.order('created_at', { ascending: false });
+      // Ordenar conforme selecionado
+      if (ordenacao === 'recentes') {
+        query = query.order('created_at', { ascending: false });
+      } else {
+        query = query.order('views', { ascending: false });
+      }
 
-      const { data: promptsData, error: promptsError } = await query;
+      const { data: promptsData, error: promptsError, count } = await query;
 
       if (promptsError) {
         throw promptsError;
       }
       
       setPrompts(promptsData || []);
+      setTotalPrompts(count || 0);
+
+      // Carregar categorias com contagem
+      const { data: categoriasData } = await supabase
+        .from('prompts')
+        .select('categoria')
+        .eq('publico', true);
+
+      if (categoriasData) {
+        const categoriasCount = {};
+        categoriasData.forEach(item => {
+          if (item.categoria) {
+            categoriasCount[item.categoria] = (categoriasCount[item.categoria] || 0) + 1;
+          }
+        });
+
+        const categoriasArray = Object.keys(categoriasCount).map(nome => ({
+          nome,
+          count: categoriasCount[nome]
+        }));
+
+        setCategorias(categoriasArray);
+      }
 
       // Se usuário estiver logado, carregar seus favoritos
       if (currentUserId) {
@@ -229,38 +269,91 @@ export default function Explorar() {
       setFavoritosContagem(contagemFavoritos);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      toast.error('Erro ao carregar prompts');
+      toast.error('Erro ao carregar prompts. Por favor, tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Carregar dados iniciais
   useEffect(() => {
-    carregarDados();
-  }, []);
+    // Aplicar filtros dos query params
+    if (categoriaParam) {
+      setCategoriaFiltro(categoriaParam);
+    }
+    
+    if (queryParam) {
+      setSearchQuery(queryParam);
+    }
+    
+    if (ordenacaoParam) {
+      setOrdenacao(ordenacaoParam);
+    }
+    
+    carregarDados(
+      tagsFiltro, 
+      categoriaParam || categoriaFiltro, 
+      queryParam || searchQuery
+    );
+  }, [paginaAtual]);
 
+  // Atualizar URL com os filtros
+  useEffect(() => {
+    const query = {};
+    
+    if (searchQuery) {
+      query.q = searchQuery;
+    }
+    
+    if (categoriaFiltro && categoriaFiltro !== 'todas') {
+      query.categoria = categoriaFiltro;
+    }
+    
+    if (ordenacao && ordenacao !== 'recentes') {
+      query.ordenacao = ordenacao;
+    }
+    
+    router.push({
+      pathname: '/explorar',
+      query
+    }, undefined, { shallow: true });
+    
+  }, [searchQuery, categoriaFiltro, ordenacao]);
+
+  // Função para lidar com buscas
   const handleSearch = () => {
-    carregarDados(tagsFiltro, categoriaFiltro, termoBusca);
+    carregarDados(tagsFiltro, categoriaFiltro, searchQuery);
   };
 
+  // Função para adicionar/remover favoritos
   const handleToggleFavorito = async (promptId) => {
-    if (!userId) {
-      toast.info('Você precisa estar logado para adicionar favoritos');
-      return;
-    }
-
     try {
-      if (favoritos.includes(promptId)) {
+      // Verificar se o usuário está logado
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        toast.info('Faça login para adicionar favoritos');
+        router.push('/auth/login');
+        return;
+      }
+      
+      const userId = session.user.id;
+      
+      // Verificar se já é favorito
+      const isFavorito = favoritos.includes(promptId);
+      
+      if (isFavorito) {
         // Remover dos favoritos
-        await supabase
+        const { error } = await supabase
           .from('favoritos')
           .delete()
-          .eq('prompt_id', promptId)
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .eq('prompt_id', promptId);
           
-        setFavoritos(favoritos.filter(id => id !== promptId));
+        if (error) throw error;
         
-        // Decrementar contagem
+        // Atualizar estado local
+        setFavoritos(favoritos.filter(id => id !== promptId));
         setFavoritosContagem(prev => ({
           ...prev,
           [promptId]: Math.max(0, (prev[promptId] || 1) - 1)
@@ -271,230 +364,266 @@ export default function Explorar() {
         // Adicionar aos favoritos
         const { error } = await supabase
           .from('favoritos')
-          .insert({ prompt_id: promptId, user_id: userId });
-
-        if (error) {
-          if (error.code === '23505') { // Violação de restrição única
-            toast.info('Este prompt já está nos seus favoritos');
-          } else {
-            throw error;
-          }
-        } else {
-          setFavoritos([...favoritos, promptId]);
+          .insert({
+            user_id: userId,
+            prompt_id: promptId,
+            created_at: new Date()
+          });
           
-          // Incrementar contagem
-          setFavoritosContagem(prev => ({
-            ...prev,
-            [promptId]: (prev[promptId] || 0) + 1
-          }));
-          
-          toast.success('Adicionado aos favoritos');
-        }
+        if (error) throw error;
+        
+        // Atualizar estado local
+        setFavoritos([...favoritos, promptId]);
+        setFavoritosContagem(prev => ({
+          ...prev,
+          [promptId]: (prev[promptId] || 0) + 1
+        }));
+        
+        toast.success('Adicionado aos favoritos');
       }
     } catch (error) {
       console.error('Erro ao atualizar favorito:', error);
-      toast.error('Erro ao atualizar favorito');
+      toast.error('Erro ao atualizar favorito. Tente novamente.');
     }
   };
 
-  const limparFiltros = () => {
-    setTermoBusca('');
-    setCategoriaFiltro('');
-    setTagsFiltro([]);
-    carregarDados([], '', '');
-  };
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      <Head>
-        <title>Explorar Prompts | CriaPrompt</title>
-        <meta name="description" content="Explore prompts públicos da comunidade" />
-      </Head>
+    <AuthGuard>
+      <div className="flex min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 relative overflow-hidden">
+        <Head>
+          <title>Explorar Prompts | CriaPrompt</title>
+          <meta name="description" content="Explore prompts compartilhados pela comunidade" />
+        </Head>
+        
+        <ToastContainer theme="dark" position="top-right" />
+        
+        {/* Background elements */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-transparent to-transparent pointer-events-none"></div>
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_left,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent pointer-events-none"></div>
 
-      <Header />
-      
-      <ToastContainer position="top-right" autoClose={3000} />
-      
-      {/* Modal de prévia de prompt */}
-      {promptSelecionado && (
-        <PromptPreview
-          prompt={promptSelecionado}
-          userId={userId}
-          isFavorito={favoritos.includes(promptSelecionado.id)}
-          onToggleFavorito={handleToggleFavorito}
-          favoritosCount={favoritosContagem[promptSelecionado.id] || 0}
-          onClose={fecharPrevia}
-        />
-      )}
+        {/* Decorative elements */}
+        <div className="absolute top-40 right-[20%] w-72 h-72 bg-purple-500/10 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-20 left-[30%] w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-      <main className="container-app py-10">
-        <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-          Explorar Prompts
-        </h1>
-
-        <div className="mb-8 bg-white rounded-lg shadow p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-              <label htmlFor="termoBusca" className="block text-gray-700 mb-2">
-                Buscar
-              </label>
-              <input
-                id="termoBusca"
-                type="text"
-                placeholder="Buscar prompts..."
-                value={termoBusca}
-                onChange={(e) => setTermoBusca(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+        <SidebarNav />
+        
+        <main className="flex-1 p-6 md:p-8 relative z-10">
+          <div className="mx-auto max-w-6xl space-y-6">
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-medium tracking-tight">Explorar Prompts</h1>
             </div>
-            <div>
-              <label htmlFor="categoria" className="block text-gray-700 mb-2">
-                Categoria
-              </label>
-              <select
-                id="categoria"
-                value={categoriaFiltro}
-                onChange={(e) => setCategoriaFiltro(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="">Todas as categorias</option>
-                <option value="geral">Geral</option>
-                <option value="criativo">Criativo</option>
-                <option value="academico">Acadêmico</option>
-                <option value="profissional">Profissional</option>
-                <option value="imagem">Geração de Imagem</option>
-                <option value="codigo">Programação</option>
-                <option value="outro">Outro</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button
-                onClick={handleSearch}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300"
-              >
-                Buscar
-              </button>
-            </div>
-          </div>
-          
-          <div className="mb-4">
-            <label htmlFor="tags" className="block text-gray-700 mb-2">
-              Filtrar por Tags
-            </label>
-            <div className="flex flex-wrap gap-2 mb-2">
-              {tagsFiltro.map((tag, index) => (
-                <span 
-                  key={index} 
-                  className="bg-indigo-100 text-indigo-800 px-2 py-1 rounded-full text-sm flex items-center"
-                >
-                  {tag}
-                  <button 
-                    type="button"
-                    onClick={() => removerTag(tag)}
-                    className="ml-1 text-indigo-600 hover:text-indigo-800"
-                  >
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-            <div className="relative">
-              <input
-                id="tags"
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Digite tags para filtrar..."
-              />
-              {sugestoesTags.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
-                  {sugestoesTags.map((sugestao, index) => (
-                    <div 
-                      key={index}
-                      className="px-3 py-2 cursor-pointer hover:bg-gray-100"
-                      onClick={() => {
-                        adicionarTag(sugestao);
-                      }}
-                    >
-                      {sugestao}
+            
+            <Card className="bg-background/30 backdrop-blur-xl border border-white/20">
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-4 md:flex-row md:items-end">
+                  <div className="flex-1">
+                    <label htmlFor="searchQuery" className="block text-sm font-medium mb-1">
+                      Buscar
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <Search className="w-4 h-4 text-gray-400" />
+                      </div>
+                      <input
+                        type="text"
+                        id="searchQuery"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Buscar por título, descrição..."
+                        className="w-full px-3 py-2.5 pl-10 bg-background/30 backdrop-blur-xl border border-white/20 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40"
+                      />
                     </div>
-                  ))}
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      onClick={() => setMostrarFiltros(!mostrarFiltros)}
+                      variant="outline"
+                      className="flex items-center gap-2 bg-background/30 backdrop-blur-xl border border-white/20"
+                    >
+                      <Filter size={16} />
+                      <span>Filtros</span>
+                    </Button>
+                    
+                    <Button
+                      onClick={() => {
+                        const novaOrdenacao = ordenacao === 'recentes' ? 'populares' : 'recentes';
+                        setOrdenacao(novaOrdenacao);
+                      }}
+                      variant="outline"
+                      className="flex items-center gap-2 bg-background/30 backdrop-blur-xl border border-white/20"
+                    >
+                      {ordenacao === 'recentes' ? <Clock size={16} /> : <ArrowUpDown size={16} />}
+                      <span>{ordenacao === 'recentes' ? 'Mais recentes' : 'Mais populares'}</span>
+                    </Button>
+                    
+                    <Button
+                      onClick={() => {
+                        setSearchQuery('');
+                        setCategoriaFiltro('todas');
+                        setOrdenacao('recentes');
+                        router.push('/explorar', undefined, { shallow: true });
+                      }}
+                      variant="outline"
+                      className="bg-background/30 backdrop-blur-xl border border-white/20"
+                      disabled={!searchQuery && categoriaFiltro === 'todas' && ordenacao === 'recentes'}
+                    >
+                      Limpar
+                    </Button>
+                  </div>
                 </div>
-              )}
-              {carregandoSugestoes && (
-                <div className="absolute right-3 top-3">
-                  <svg className="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                
+                {mostrarFiltros && (
+                  <div className="mt-4 p-4 bg-background/50 backdrop-blur-xl border border-white/20 rounded-md animate-in fade-in-50 duration-150">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">Categorias</label>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setCategoriaFiltro('todas')}
+                          className={`px-3 py-1.5 rounded-md text-sm ${
+                            categoriaFiltro === 'todas'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-background/50 hover:bg-white/10'
+                          }`}
+                        >
+                          Todas
+                        </button>
+                        
+                        {categorias.map((cat) => (
+                          <button
+                            key={cat.nome}
+                            onClick={() => setCategoriaFiltro(cat.nome)}
+                            className={`px-3 py-1.5 rounded-md text-sm ${
+                              categoriaFiltro === cat.nome
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-background/50 hover:bg-white/10'
+                            }`}
+                          >
+                            {cat.nome} ({cat.count})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Tags */}
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium mb-2">Tags</label>
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {tagsFiltro.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary-foreground"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => removerTag(tag)}
+                              className="ml-1 text-primary-foreground hover:text-white/80"
+                            >
+                              &times;
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={tagInput}
+                          onChange={(e) => setTagInput(e.target.value)}
+                          onKeyDown={handleTagKeyDown}
+                          placeholder="Digite tags para filtrar..."
+                          className="w-full px-3 py-2 bg-background/30 backdrop-blur-xl border border-white/20 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40"
+                        />
+                        {sugestoesTags.length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 bg-background/90 backdrop-blur-xl border border-white/20 rounded-md shadow-lg">
+                            {sugestoesTags.map((sugestao, index) => (
+                              <div
+                                key={index}
+                                className="px-3 py-2 cursor-pointer hover:bg-white/10"
+                                onClick={() => adicionarTag(sugestao)}
+                              >
+                                {sugestao}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
+                  <p className="mt-4 text-muted-foreground">Carregando prompts...</p>
                 </div>
-              )}
-            </div>
-          </div>
-          
-          {/* Botão para limpar filtros */}
-          {(termoBusca || categoriaFiltro || tagsFiltro.length > 0) && (
-            <div className="mt-4 text-right">
-              <button
-                onClick={limparFiltros}
-                className="text-indigo-600 hover:text-indigo-800 text-sm"
-              >
-                Limpar todos os filtros
-              </button>
-            </div>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="text-center py-10">
-            <svg className="animate-spin h-8 w-8 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p className="mt-2 text-gray-600">Carregando prompts...</p>
-          </div>
-        ) : prompts.length === 0 ? (
-          <div className="bg-white rounded-lg shadow p-8 text-center">
-            <p className="text-gray-600 mb-4">
-              Nenhum prompt encontrado para os critérios selecionados.
-            </p>
-            {categoriaFiltro || termoBusca || tagsFiltro.length > 0 ? (
-              <button
-                onClick={limparFiltros}
-                className="text-indigo-600 hover:text-indigo-800"
-              >
-                Limpar filtros
-              </button>
+              </div>
+            ) : prompts.length === 0 ? (
+              <div className="text-center py-12">
+                <h2 className="text-xl font-medium mb-2">Nenhum prompt encontrado</h2>
+                <p className="text-muted-foreground mb-6">
+                  {searchQuery || categoriaFiltro !== 'todas' || tagsFiltro.length > 0
+                    ? 'Tente ajustar seus filtros de busca.' 
+                    : 'Seja o primeiro a compartilhar um prompt com a comunidade!'}
+                </p>
+                {session && (
+                  <Button
+                    onClick={() => router.push('/criar')}
+                    className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg transition-all duration-300"
+                  >
+                    Criar Novo Prompt
+                  </Button>
+                )}
+              </div>
             ) : (
-              <button
-                onClick={() => router.push('/criar')}
-                className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer"
-              >
-                Criar o primeiro prompt
-              </button>
+              <div className="space-y-6">
+                <PromptCard 
+                  prompts={prompts} 
+                  favoritos={favoritos} 
+                  onToggleFavorito={handleToggleFavorito} 
+                  favoritosContagem={favoritosContagem}
+                  onClickPrompt={exibirPrevia}
+                />
+                
+                {/* Paginação */}
+                {totalPrompts > promptsPorPagina && (
+                  <div className="flex justify-center mt-8">
+                    <div className="flex space-x-2">
+                      {Array.from({ length: Math.ceil(totalPrompts / promptsPorPagina) }).map((_, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setPaginaAtual(i + 1)}
+                          className={`w-10 h-10 rounded-md flex items-center justify-center ${
+                            paginaAtual === i + 1
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-background/30 backdrop-blur-xl border border-white/20 hover:bg-white/10'
+                          }`}
+                        >
+                          {i + 1}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {prompts.map((prompt) => (
-              <PromptCard 
-                key={prompt.id}
-                prompt={prompt}
-                userId={userId}
-                isFavorito={favoritos.includes(prompt.id)}
-                onToggleFavorito={handleToggleFavorito}
-                favoritosCount={favoritosContagem[prompt.id] || 0}
-                showActions={true}
-                showAuthor={true}
-                isOwner={userId === prompt.user_id}
-                onClickCard={() => exibirPrevia(prompt)}
-              />
-            ))}
-          </div>
+        </main>
+        
+        {/* Preview Modal */}
+        {promptSelecionado && (
+          <PromptPreview
+            prompt={promptSelecionado}
+            onClose={fecharPrevia}
+            isFavorito={favoritos.includes(promptSelecionado.id)}
+            onToggleFavorito={() => handleToggleFavorito(promptSelecionado.id)}
+            favoritosContagem={favoritosContagem[promptSelecionado.id] || 0}
+          />
         )}
-      </main>
-    </div>
+      </div>
+    </AuthGuard>
   );
 }

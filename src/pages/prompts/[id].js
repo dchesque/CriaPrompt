@@ -2,7 +2,6 @@
 
 // Bloco de Importações
 import Head from 'next/head';
-import Header from '../../components/Header';
 import ComentariosAvaliacao from '../../components/ComentariosAvaliacao';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
@@ -11,6 +10,9 @@ import { supabase } from '../../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { isPromptOwner } from '../../utils/promptUtils';
+import { Button } from '../../components/ui/button';
+import AppHeader from '../../components/AppHeader';
+import { PromptModal } from '../../components/PromptModal';
 
 export default function DetalhesPrompt() {
   const router = useRouter();
@@ -25,6 +27,7 @@ export default function DetalhesPrompt() {
   const [isFavorito, setIsFavorito] = useState(false);
   const [camposValores, setCamposValores] = useState({});
   const [compartilharUrl, setCompartilharUrl] = useState('');
+  const [modalAberto, setModalAberto] = useState(false);
 
   // Bloco de Efeitos
   useEffect(() => {
@@ -158,9 +161,9 @@ export default function DetalhesPrompt() {
     setPromptModificado(textoModificado);
   }, [prompt, camposValores]);
 
-  // Função para redirecionar para a página de utilização do prompt
+  // Função para abrir o modal de utilização do prompt
   const utilizarPrompt = () => {
-    router.push(`/prompts/utilizar/${id}`);
+    setModalAberto(true);
   };
 
   // Bloco de Funções de Interação
@@ -254,12 +257,12 @@ export default function DetalhesPrompt() {
   // Bloco de Renderização Condicional de Estados de Carregamento
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <Header />
-        <main className="container-app py-10">
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-            <span className="ml-3 text-gray-600">Carregando prompt...</span>
+      <div className="flex flex-col min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 relative overflow-hidden">
+        <AppHeader />
+        <main className="flex-1 flex justify-center items-center">
+          <div className="flex flex-col items-center">
+            <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
+            <span className="mt-4 text-muted-foreground">Carregando prompt...</span>
           </div>
         </main>
       </div>
@@ -269,22 +272,22 @@ export default function DetalhesPrompt() {
   // Bloco de Renderização de Erro
   if (error || !prompt) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <Header />
-        <main className="container-app py-10">
-          <div className="bg-white rounded-lg shadow p-8 text-center max-w-lg mx-auto">
+      <div className="flex flex-col min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 relative overflow-hidden">
+        <AppHeader />
+        <main className="flex-1 p-6 md:p-8 relative z-10 flex justify-center">
+          <div className="bg-background/30 backdrop-blur-xl border border-white/20 rounded-lg p-8 text-center max-w-lg">
             <div className="text-red-500 text-5xl mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">{error || 'Prompt não encontrado'}</h2>
-            <p className="text-gray-600 mb-6">Não foi possível acessar este prompt. Ele pode ter sido removido ou você não tem permissão para visualizá-lo.</p>
-            <Link href="/explorar">
-              <span className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 cursor-pointer">
+            <h2 className="text-2xl font-bold mb-4">{error || 'Prompt não encontrado'}</h2>
+            <p className="text-muted-foreground mb-6">Não foi possível acessar este prompt. Ele pode ter sido removido ou você não tem permissão para visualizá-lo.</p>
+            <Button asChild className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+              <Link href="/explorar">
                 Voltar para Explorar
-              </span>
-            </Link>
+              </Link>
+            </Button>
           </div>
         </main>
       </div>
@@ -293,51 +296,167 @@ export default function DetalhesPrompt() {
 
 // Bloco de Renderização Principal
 return (
-  <div className="min-h-screen bg-gray-100">
+  <div className="flex flex-col min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 relative overflow-hidden">
     <Head>
       <title>{prompt.titulo} | CriaPrompt</title>
       <meta name="description" content={`${prompt.titulo} - Prompt para IA`} />
     </Head>
 
-    <Header />
+    <AppHeader />
     
     <ToastContainer position="top-right" autoClose={3000} />
 
-    <main className="container-app py-10">
-      {/* Renderização do conteúdo do prompt */}
-      <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
-        {/* Cabeçalho com informações do prompt */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center">
-              <span className="inline-block px-3 py-1 bg-white text-indigo-800 rounded-full text-sm font-medium">
-                {prompt.categoria}
-              </span>
-              {prompt.tags && prompt.tags.length > 0 && (
-                <div className="ml-3 flex space-x-2">
-                  {prompt.tags.slice(0, 3).map((tag, index) => (
-                    <span 
-                      key={index} 
-                      className="bg-white/20 px-2 py-1 rounded-full text-xs"
-                    >
-                      #{tag}
-                    </span>
+    {/* Modal de utilização do prompt */}
+    <PromptModal 
+      promptId={id} 
+      isOpen={modalAberto} 
+      onClose={() => setModalAberto(false)} 
+    />
+
+    <main className="flex-1 p-6 md:p-8 relative z-10">
+      <div className="mx-auto max-w-4xl">
+        {/* Renderização do conteúdo do prompt */}
+        <div className="bg-background/30 backdrop-blur-xl border border-white/20 rounded-xl shadow-lg overflow-hidden mb-6">
+          {/* Cabeçalho com informações do prompt */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 text-white">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="inline-block px-3 py-1 bg-white text-indigo-800 rounded-full text-sm font-medium">
+                  {prompt.categoria}
+                </span>
+                {prompt.tags && prompt.tags.length > 0 && (
+                  <div className="ml-3 flex space-x-2">
+                    {prompt.tags.slice(0, 3).map((tag, index) => (
+                      <span 
+                        key={index} 
+                        className="bg-white/20 px-2 py-1 rounded-full text-xs"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center space-x-3">
+                <button 
+                  onClick={toggleFavorito}
+                  className={`p-2 rounded-full transition-colors duration-300 ${
+                    isFavorito 
+                      ? 'bg-red-500 text-white hover:bg-red-600' 
+                      : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className={`h-6 w-6 ${isFavorito ? 'fill-current' : ''}`} 
+                    fill="none" 
+                    viewBox="0 0 24 24" 
+                    stroke="currentColor"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth={2} 
+                      d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Conteúdo do Prompt */}
+          <div className="p-6">
+            <h1 className="text-3xl font-bold mb-4">{prompt.titulo}</h1>
+
+            {/* Descrição do Prompt (se existir) */}
+            {prompt.descricao && (
+              <div className="bg-background/50 border border-white/10 rounded-lg p-4 mb-4">
+                <p className="text-muted-foreground italic">{prompt.descricao}</p>
+              </div>
+            )}
+
+            {/* Campos Personalizáveis */}
+            {Object.keys(camposValores).length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-lg font-semibold mb-2">Campos Personalizáveis</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Object.entries(camposValores).map(([campo, valor]) => (
+                    <div key={campo} className="bg-background/50 p-3 rounded-lg border border-white/10">
+                      <label className="block text-sm font-medium mb-1">
+                        #{campo}
+                      </label>
+                      <input
+                        type="text"
+                        value={valor}
+                        onChange={(e) => atualizarCampo(campo, e.target.value)}
+                        placeholder={`Digite o valor para ${campo}`}
+                        className="w-full px-3 py-2 bg-background/30 backdrop-blur-xl border border-white/20 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40"
+                      />
+                    </div>
                   ))}
                 </div>
-              )}
+                <button
+                  onClick={resetarCampos}
+                  className="mt-3 text-sm text-primary hover:underline"
+                >
+                  Resetar valores padrão
+                </button>
+              </div>
+            )}
+
+            {/* Texto do Prompt */}
+            <div className="bg-background/50 p-4 rounded-lg border border-white/10 mb-4">
+              <pre className="whitespace-pre-wrap font-mono text-sm">
+                {promptModificado}
+              </pre>
             </div>
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={toggleFavorito}
-                className={`p-2 rounded-full transition-colors duration-300 ${
-                  isFavorito 
-                    ? 'bg-red-500 text-white hover:bg-red-600' 
-                    : 'bg-white/20 text-white hover:bg-white/30'
-                }`}
+
+            {/* Ações */}
+            <div className="flex justify-between items-center">
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  onClick={utilizarPrompt}
+                  className="bg-gradient-to-r from-green-600 to-green-500 text-white"
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="h-5 w-5 mr-2" 
+                    viewBox="0 0 20 20" 
+                    fill="currentColor"
+                  >
+                    <path 
+                      fillRule="evenodd" 
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" 
+                      clipRule="evenodd" 
+                    />
+                  </svg>
+                  Utilizar Prompt
+                </Button>
+                <Button
+                  onClick={copiarPrompt}
+                  className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
+                >
+                  <svg 
+                    xmlns="http://www.w3.org/2000/svg" 
+                    className="h-5 w-5 mr-2" 
+                    viewBox="0 0 20 20" 
+                    fill="currentColor"
+                  >
+                    <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
+                    <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
+                  </svg>
+                  Copiar Prompt
+                </Button>
+              </div>
+              <Button
+                onClick={compartilharPrompt}
+                variant="outline"
+                className="bg-background/30 border-white/20"
               >
                 <svg 
                   xmlns="http://www.w3.org/2000/svg" 
-                  className={`h-6 w-6 ${isFavorito ? 'fill-current' : ''}`} 
+                  className="h-5 w-5" 
                   fill="none" 
                   viewBox="0 0 24 24" 
                   stroke="currentColor"
@@ -346,128 +465,22 @@ return (
                     strokeLinecap="round" 
                     strokeLinejoin="round" 
                     strokeWidth={2} 
-                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" 
+                    d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" 
                   />
                 </svg>
-              </button>
+              </Button>
             </div>
           </div>
         </div>
 
-        {/* Conteúdo do Prompt */}
-        <div className="p-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-4">{prompt.titulo}</h1>
-
-          {/* Descrição do Prompt (se existir) */}
-          {prompt.descricao && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
-              <p className="text-gray-700 italic">{prompt.descricao}</p>
-            </div>
-          )}
-
-          {/* Campos Personalizáveis */}
-          {Object.keys(camposValores).length > 0 && (
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-2">Campos Personalizáveis</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {Object.entries(camposValores).map(([campo, valor]) => (
-                  <div key={campo} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                    <label className="block text-sm font-medium text-gray-600 mb-1">
-                      #{campo}
-                    </label>
-                    <input
-                      type="text"
-                      value={valor}
-                      onChange={(e) => atualizarCampo(campo, e.target.value)}
-                      placeholder={`Digite o valor para ${campo}`}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={resetarCampos}
-                className="mt-3 text-sm text-indigo-600 hover:text-indigo-800"
-              >
-                Resetar valores padrão
-              </button>
-            </div>
-          )}
-
-          {/* Texto do Prompt */}
-          <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-4">
-            <pre className="whitespace-pre-wrap font-sans text-gray-800">
-              {promptModificado}
-            </pre>
-          </div>
-
-          {/* Ações */}
-          <div className="flex justify-between items-center">
-            <div className="flex space-x-3">
-              <button
-                onClick={utilizarPrompt}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  className="h-5 w-5 mr-2" 
-                  viewBox="0 0 20 20" 
-                  fill="currentColor"
-                >
-                  <path 
-                    fillRule="evenodd" 
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z" 
-                    clipRule="evenodd" 
-                  />
-                </svg>
-                Utilizar Prompt
-              </button>
-              <button
-                onClick={copiarPrompt}
-                className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  className="h-5 w-5 mr-2" 
-                  viewBox="0 0 20 20" 
-                  fill="currentColor"
-                >
-                  <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
-                  <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
-                </svg>
-                Copiar Prompt
-              </button>
-            </div>
-            <button
-              onClick={compartilharPrompt}
-              className="text-gray-600 hover:text-indigo-600 transition-colors"
-            >
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                className="h-6 w-6" 
-                fill="none" 
-                viewBox="0 0 24 24" 
-                stroke="currentColor"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" 
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
+        {/* Seção de Comentários e Avaliações */}
+        {!loading && !error && (
+          <ComentariosAvaliacao 
+            promptId={prompt.id} 
+            userId={user?.id} 
+          />
+        )}
       </div>
-
-      {/* Seção de Comentários e Avaliações */}
-      {!loading && !error && (
-        <ComentariosAvaliacao 
-          promptId={prompt.id} 
-          userId={user?.id} 
-        />
-      )}
     </main>
   </div>
 );

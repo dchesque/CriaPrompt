@@ -177,7 +177,7 @@ export default function Header() {
             </nav>
 
             {!loading && (
-              <>
+              <div>
                 {user ? (
                   <div className="relative">
                     <button 
@@ -239,7 +239,7 @@ export default function Header() {
                     </span>
                   </Link>
                 )}
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -289,7 +289,7 @@ export default function Header() {
                 </Link>
               </li>
               {!loading && (
-                <>
+                <div>
                   {user ? (
                     <>
                       <li>
@@ -325,7 +325,7 @@ export default function Header() {
                       </Link>
                     </li>
                   )}
-                </>
+                </div>
               )}
             </ul>
           </nav>

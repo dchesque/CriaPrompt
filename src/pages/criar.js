@@ -1,704 +1,888 @@
 // src/pages/criar.js
 
 import Head from 'next/head';
-import Header from '../components/Header';
 import AuthGuard from '../components/AuthGuard';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { FiEye, FiEyeOff, FiCopy, FiPlusCircle, FiTrash2, FiSave } from 'react-icons/fi';
-import { FaWandMagicSparkles } from "react-icons/fa6";
-
+import { 
+  Copy, 
+  EyeOff, 
+  Eye, 
+  PlusCircle, 
+  Trash2, 
+  Save,
+  Wand2,
+  Loader2,
+  ArrowLeft,
+  FileText
+} from 'lucide-react';
+import { SidebarNav } from '../components/SidebarNav';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Separator } from '../components/ui/separator';
+import DashboardLayout from '../components/layouts/DashboardLayout';
 
 export default function CriarPrompt() {
   const router = useRouter();
   const [titulo, setTitulo] = useState('');
   const [prompt, setPrompt] = useState('');
-  // Estado para o novo campo de descrição
   const [descricao, setDescricao] = useState('');
-  const [categoria, setCategoria] = useState('geral');
+  const [categoria, setCategoria] = useState('');
+  const [subcategoria, setSubcategoria] = useState('');
   const [isPublico, setIsPublico] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const promptRef = useRef(null);
-  
-  // Estado para geração de descrição
-  const [gerandoDescricao, setGerandoDescricao] = useState(false);
-  
-  // Novos estados para campos personalizáveis
-  const [camposPersonalizados, setCamposPersonalizados] = useState([]);
-  const [mostrarAddCampo, setMostrarAddCampo] = useState(false);
-  const [novoCampoNome, setNovoCampoNome] = useState('');
-  const [novoCampoDescricao, setNovoCampoDescricao] = useState('');
-  const [novoCampoValorPadrao, setNovoCampoValorPadrao] = useState('');
-  
-  // Estados para tags
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
   const [sugestoesTags, setSugestoesTags] = useState([]);
-  const [carregandoSugestoes, setCarregandoSugestoes] = useState(false);
-  const [templatePadrao, setTemplatePadrao] = useState('');
+  const [showSugestoes, setShowSugestoes] = useState(false);
+  const [camposPersonalizados, setCamposPersonalizados] = useState([]);
+  const [previewText, setPreviewText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   
-  // Estado para previsualização do prompt
-  const [previewPrompt, setPreviewPrompt] = useState('');
-  const [mostrarPreview, setMostrarPreview] = useState(false);
-
-  // Efeito para atualizar a previsualização do prompt
+  const tagInputRef = useRef(null);
+  const sugestoesRef = useRef(null);
+  
+  // Estados para gerenciar categorias e subcategorias
+  const [categorias, setCategorias] = useState([]);
+  const [subcategorias, setSubcategorias] = useState([]);
+  const [subcategoriasDisponiveis, setSubcategoriasDisponiveis] = useState([]);
+  
   useEffect(() => {
+    // Inicialização
+    carregarCategorias();
+    
+    // Atualizar preview
     atualizarPreview();
-  }, [prompt, camposPersonalizados]);
-
-  // Função para atualizar a previsualização
-  const atualizarPreview = () => {
-    let promptPreview = prompt;
-    camposPersonalizados.forEach(campo => {
-      const placeholder = `#${campo.nome}`;
-      if (promptPreview.includes(placeholder)) {
-        promptPreview = promptPreview.replace(
-          new RegExp(placeholder, 'g'), 
-          `<span class="bg-indigo-100 text-indigo-800 px-1 rounded">${campo.valorPadrao || placeholder}</span>`
-        );
+    
+    // Esconder sugestões quando clicar fora
+    const handleClickOutside = (e) => {
+      if (
+        sugestoesRef.current && 
+        !sugestoesRef.current.contains(e.target) && 
+        !tagInputRef.current.contains(e.target)
+      ) {
+        setShowSugestoes(false);
       }
-    });
-    setPreviewPrompt(promptPreview);
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+  
+  // Carregar categorias e subcategorias
+  const carregarCategorias = async () => {
+    try {
+      // Carregar categorias principais
+      const { data: categoriasData, error: categoriasError } = await supabase
+        .from('categorias')
+        .select('*')
+        .order('nome');
+      
+      if (categoriasError) throw categoriasError;
+      setCategorias(categoriasData || []);
+      
+      // Carregar todas as subcategorias
+      const { data: subcategoriasData, error: subcategoriasError } = await supabase
+        .from('subcategorias')
+        .select('*')
+        .order('nome');
+      
+      if (subcategoriasError) throw subcategoriasError;
+      setSubcategorias(subcategoriasData || []);
+    } catch (error) {
+      console.error('Erro ao carregar categorias:', error);
+    }
   };
-
-  // Função para gerar descrição automática
+  
+  // Atualizar subcategorias disponíveis quando categoria principal muda
+  useEffect(() => {
+    if (categoria) {
+      const categoriaObj = categorias.find(c => c.nome === categoria || c.id === parseInt(categoria));
+      if (categoriaObj) {
+        const subcatsFiltradas = subcategorias.filter(sub => sub.categoria_id === categoriaObj.id);
+        setSubcategoriasDisponiveis(subcatsFiltradas);
+        // Limpar subcategoria selecionada se não estiver disponível
+        if (subcatsFiltradas.length > 0 && !subcatsFiltradas.some(sub => sub.nome === subcategoria)) {
+          setSubcategoria('');
+        }
+      }
+    } else {
+      setSubcategoriasDisponiveis([]);
+      setSubcategoria('');
+    }
+  }, [categoria, categorias, subcategorias]);
+  
+  // Extrai campos personalizados do formato (campo)
+  const detectarCampos = () => {
+    if (!prompt) return;
+    
+    const regex = /\(([^)]+)\)/g;
+    const matches = [...prompt.matchAll(regex)];
+    
+    const camposExtraidos = matches.map(match => match[1])
+      .filter((value, index, self) => self.indexOf(value) === index) // Remover duplicados
+      .map(nome => ({ 
+        nome, 
+        placeholder: `Digite o valor para ${nome}`,
+        valor: ''
+      }));
+    
+    if (JSON.stringify(camposExtraidos) !== JSON.stringify(camposPersonalizados)) {
+      setCamposPersonalizados(camposExtraidos);
+    }
+  };
+  
+  // Atualizar campos quando o prompt mudar
+  useEffect(() => {
+    detectarCampos();
+  }, [prompt]);
+  
+  const atualizarPreview = () => {
+    let textoPreview = prompt;
+    
+    camposPersonalizados.forEach(campo => {
+      const valorSubstituicao = campo.valor || `[${campo.placeholder}]`;
+      textoPreview = textoPreview.replace(
+        new RegExp(`\\(${campo.nome}\\)`, 'g'),
+        valorSubstituicao
+      );
+    });
+    
+    setPreviewText(textoPreview);
+  };
+  
   const gerarDescricao = async () => {
-    if (!prompt || prompt.trim() === '') {
-      toast.warning('Digite o texto do prompt primeiro');
+    if (!prompt || prompt.length < 10) {
+      toast.error('O prompt precisa ter pelo menos 10 caracteres para gerar uma descrição');
       return;
     }
     
-    setGerandoDescricao(true);
-    
     try {
-      const response = await fetch('/api/groq/generate-description', {
+      setIsGeneratingDescription(true);
+      
+      // Gerar descrição via API
+      const response = await fetch('/api/gerarDescricao', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          prompt: prompt
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
       });
       
+      if (!response.ok) throw new Error('Erro ao gerar descrição');
+      
       const data = await response.json();
+      setDescricao(data.descricao);
       
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao gerar descrição');
-      }
-      
-      setDescricao(data.description);
       toast.success('Descrição gerada com sucesso!');
     } catch (error) {
       console.error('Erro ao gerar descrição:', error);
-      toast.error('Falha ao gerar descrição automática');
+      toast.error('Não foi possível gerar a descrição. Tente novamente mais tarde.');
     } finally {
-      setGerandoDescricao(false);
+      setIsGeneratingDescription(false);
     }
   };
-
-  // Carregar template padrão das configurações do usuário
-useEffect(() => {
-  const carregarConfiguracoes = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) return;
-      
-      // Verificar primeiro se a tabela existe
-      const { error: tableError } = await supabase
-        .from('configuracoes')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-        
-      // Se ocorrer um erro que indica que a tabela não existe, apenas retorne
-      if (tableError && tableError.code === '42P01') {
-        console.log('Tabela de configurações não existe ainda');
-        return;
-      }
-      
-      const { data, error } = await supabase
-        .from('configuracoes')
-        .select('template_padrao')
-        .eq('user_id', session.user.id)
-        .single();
-        
-      if (error && error.code !== 'PGRST116') throw error;
-      
-      if (data && data.template_padrao) {
-        setTemplatePadrao(data.template_padrao);
-        setPrompt(data.template_padrao);
-      }
-    } catch (error) {
-      // Se for erro de tabela não existente, apenas log sem mostrar erro ao usuário
-      if (error.code === '42P01') {
-        console.log('Tabela de configurações não existe ainda');
-      } else {
-        console.error('Erro ao carregar configurações:', error);
-      }
-    }
-  };
-
-  carregarConfiguracoes();
-}, []);
-
-  // Função para buscar sugestões de tags ao digitar
+  
   const buscarSugestoesTags = async (valor) => {
-    if (!valor.trim()) {
+    if (!valor || valor.length < 2) {
       setSugestoesTags([]);
       return;
     }
-    
-    setCarregandoSugestoes(true);
     
     try {
       const { data, error } = await supabase
         .from('tags')
         .select('nome')
         .ilike('nome', `${valor}%`)
-        .order('count', { ascending: false })
+        .order('contagem', { ascending: false })
         .limit(5);
-        
+      
       if (error) throw error;
       
-      setSugestoesTags(data?.map(tag => tag.nome) || []);
+      // Filtrar tags que já estão selecionadas
+      const sugestoesFiltradas = data
+        .map(tag => tag.nome)
+        .filter(tag => !tags.includes(tag));
+      
+      setSugestoesTags(sugestoesFiltradas);
+      setShowSugestoes(sugestoesFiltradas.length > 0);
     } catch (error) {
       console.error('Erro ao buscar sugestões de tags:', error);
-    } finally {
-      setCarregandoSugestoes(false);
+      setSugestoesTags([]);
     }
   };
-
-  // Atualizar sugestões ao digitar
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      buscarSugestoesTags(tagInput);
-    }, 300);
-    
-    return () => clearTimeout(handler);
-  }, [tagInput]);
-
-  // Adicionar tag
+  
   const adicionarTag = (tag) => {
-    const tagFormatada = tag.trim().toLowerCase();
+    tag = tag.trim().toLowerCase();
     
-    if (!tagFormatada || tags.includes(tagFormatada)) {
+    if (!tag) return;
+    if (tags.includes(tag)) return;
+    if (tags.length >= 10) {
+      toast.error('Limite máximo de 10 tags atingido');
       return;
     }
     
-    if (tags.length >= 5) {
-      toast.warning('Você pode adicionar no máximo 5 tags');
-      return;
-    }
-    
-    setTags([...tags, tagFormatada]);
+    setTags([...tags, tag]);
     setTagInput('');
     setSugestoesTags([]);
+    setShowSugestoes(false);
+    
+    if (tagInputRef.current) {
+      tagInputRef.current.focus();
+    }
   };
-
-  // Remover tag
+  
   const removerTag = (tagParaRemover) => {
     setTags(tags.filter(tag => tag !== tagParaRemover));
   };
-
-  // Lidar com tecla Enter no input de tags
+  
   const handleTagKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       adicionarTag(tagInput);
+    } else if (e.key === 'Escape') {
+      setShowSugestoes(false);
     }
   };
   
-  // Adicionar campo personalizado
+  const handlePromptChange = (e) => {
+    setPrompt(e.target.value);
+    
+    // Atualizar preview com novo texto
+    setTimeout(() => {
+      detectarCampos();
+      atualizarPreview();
+    }, 100);
+  };
+  
   const adicionarCampoPersonalizado = () => {
-    if (!novoCampoNome) {
-      toast.error('O nome do campo é obrigatório');
+    if (camposPersonalizados.length >= 10) {
+      toast.error('Limite máximo de 10 campos personalizados atingido');
       return;
     }
     
-    const nomeCampo = novoCampoNome.trim().replace(/\s+/g, '');
-    
-    // Verificar se já existe um campo com esse nome
-    if (camposPersonalizados.some(campo => campo.nome === nomeCampo)) {
-      toast.error('Já existe um campo com esse nome');
-      return;
-    }
+    const novoNome = `campo${camposPersonalizados.length + 1}`;
     
     setCamposPersonalizados([
       ...camposPersonalizados,
-      {
-        nome: nomeCampo,
-        descricao: novoCampoDescricao.trim() || `Campo ${nomeCampo}`,
-        valorPadrao: novoCampoValorPadrao.trim()
-      }
+      { nome: novoNome, valor: '', placeholder: novoNome }
     ]);
-    
-    // Adicionar o campo ao texto do prompt
-    if (!prompt.includes(`#${nomeCampo}`)) {
-      setPrompt(prompt + (prompt.endsWith(' ') ? '' : ' ') + `#${nomeCampo}`);
-    }
-    
-    // Limpar os campos
-    setNovoCampoNome('');
-    setNovoCampoDescricao('');
-    setNovoCampoValorPadrao('');
-    setMostrarAddCampo(false);
   };
   
-  // Remover campo personalizado
   const removerCampoPersonalizado = (index) => {
-    const campoRemovido = camposPersonalizados[index];
     setCamposPersonalizados(camposPersonalizados.filter((_, i) => i !== index));
-    
-    // Opcionalmente, remover os placeholders deste campo do texto do prompt
-    // (descomentado porque pode ser que o usuário queira manter o texto)
-    /*
-    if (campoRemovido) {
-      setPrompt(prompt.replace(new RegExp(`#${campoRemovido.nome}`, 'g'), ''));
-    }
-    */
   };
   
-  // Inserir campo no prompt
   const inserirCampoNoPrompt = (campo) => {
-    if (promptRef.current) {
-      const cursorPos = promptRef.current.selectionStart;
-      const textBefore = prompt.substring(0, cursorPos);
-      const textAfter = prompt.substring(cursorPos);
-      setPrompt(textBefore + `#${campo.nome}` + textAfter);
+    const textareaElement = document.getElementById('prompt-textarea');
+    
+    if (textareaElement) {
+      const cursorPos = textareaElement.selectionStart;
+      const textoAntes = prompt.substring(0, cursorPos);
+      const textoDepois = prompt.substring(cursorPos);
       
-      // Focar de volta no textarea e colocar o cursor após o texto inserido
+      const novoTexto = `${textoAntes}(${campo.nome})${textoDepois}`;
+      
+      setPrompt(novoTexto);
+      
+      // Reposicionar cursor após o campo inserido
       setTimeout(() => {
-        promptRef.current.focus();
-        promptRef.current.selectionStart = promptRef.current.selectionEnd = cursorPos + campo.nome.length + 1;
-      }, 0);
-    } else {
-      setPrompt(prompt + (prompt.endsWith(' ') ? '' : ' ') + `#${campo.nome}`);
+        const novaPosicao = cursorPos + campo.nome.length + 2; // +2 pelos caracteres ( e )
+        textareaElement.focus();
+        textareaElement.setSelectionRange(novaPosicao, novaPosicao);
+      }, 50);
     }
   };
   
-  // Copiar prompt para o clipboard
-  const copiarPrompt = () => {
-    navigator.clipboard.writeText(prompt).then(() => {
-      toast.success('Prompt copiado para a área de transferência!');
-    }).catch(err => {
-      console.error('Falha ao copiar texto:', err);
-      toast.error('Falha ao copiar texto');
-    });
+  const atualizarCampoPersonalizado = (index, key, value) => {
+    const novosCampos = [...camposPersonalizados];
+    novosCampos[index][key] = value;
+    setCamposPersonalizados(novosCampos);
+    
+    setTimeout(atualizarPreview, 100);
   };
-
+  
+  const copiarPrompt = () => {
+    navigator.clipboard.writeText(previewText);
+    toast.success('Prompt copiado para a área de transferência!');
+  };
+  
+  const gerarComIA = async () => {
+    if (!prompt || prompt.length < 10) {
+      toast.error('O prompt precisa ter pelo menos 10 caracteres para gerar uma descrição');
+      return;
+    }
+    
+    try {
+      setIsGeneratingAi(true);
+      
+      // Gerar descrição via API
+      const response = await fetch('/api/gerarDescricao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      
+      if (!response.ok) throw new Error('Erro ao gerar descrição');
+      
+      const data = await response.json();
+      setDescricao(data.descricao);
+      
+      toast.success('Descrição gerada com sucesso!');
+    } catch (error) {
+      console.error('Erro ao gerar descrição:', error);
+      toast.error('Não foi possível gerar a descrição. Tente novamente mais tarde.');
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-  
+    
+    if (!titulo) {
+      toast.error('O título do prompt é obrigatório');
+      return;
+    }
+    
+    if (!prompt) {
+      toast.error('O conteúdo do prompt é obrigatório');
+      return;
+    }
+    
+    setIsSaving(true);
+    
     try {
-      // Verificar autenticação
-      const { data: { user } } = await supabase.auth.getUser();
-      console.log("Usuário autenticado:", user ? "Sim" : "Não");
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (!user) {
-        throw new Error("Você precisa estar logado para criar um prompt");
+      if (!session) {
+        toast.error('Você precisa estar logado para salvar prompts');
+        return;
       }
       
-      console.log("ID do usuário:", user.id);
+      // Encontrar IDs de categoria e subcategoria
+      let categoriaId = null;
+      let subcategoriaId = null;
       
-      // Inserir diretamente via Supabase
+      if (categoria) {
+        const categoriaObj = categorias.find(c => c.nome === categoria || c.id === parseInt(categoria));
+        if (categoriaObj) {
+          categoriaId = categoriaObj.id;
+          
+          if (subcategoria) {
+            const subcategoriaObj = subcategorias.find(
+              s => s.nome === subcategoria && s.categoria_id === categoriaId
+            );
+            if (subcategoriaObj) {
+              subcategoriaId = subcategoriaObj.id;
+            }
+          }
+        }
+      }
+      
+      const promptData = {
+        titulo,
+        texto: prompt,
+        descricao,
+        categoria: categoriaId,
+        subcategoria: subcategoriaId,
+        publico: isPublico,
+        tags
+      };
+      
+      // Criando novo prompt
       const { data, error } = await supabase
         .from('prompts')
         .insert({
-          titulo: titulo,
-          texto: prompt,
-          descricao: descricao, // Adicionando o novo campo descrição
-          categoria: categoria,
-          publico: isPublico,
-          user_id: user.id,
-          views: 0,
-          tags: tags || [],
-          campos_personalizados: camposPersonalizados.length > 0 ? camposPersonalizados : null
-        });
+          ...promptData,
+          user_id: session.user.id
+        })
+        .select();
+        
+      if (error) throw error;
       
-      if (error) {
-        console.error("Erro Supabase:", error);
-        throw new Error(error.message);
+      if (data && data[0]) {
+        // Salvar campos personalizados
+        if (camposPersonalizados.length > 0) {
+          const { error: camposError } = await supabase
+            .from('campos_personalizados')
+            .insert(camposPersonalizados.map(campo => ({
+              prompt_id: data[0].id,
+              nome: campo.nome,
+              placeholder: campo.placeholder,
+              valor_padrao: campo.valor
+            })));
+            
+          if (camposError) console.error('Erro ao salvar campos personalizados:', camposError);
+        }
+        
+        toast.success('Prompt salvo com sucesso!');
+        
+        // Redirecionar para a página do prompt
+        setTimeout(() => {
+          router.push(`/prompts/${data[0].id}`);
+        }, 1000);
       }
-      
-      toast.success("Prompt criado com sucesso!");
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 1000);
     } catch (error) {
-      console.error('Erro:', error);
-      setError(error.message);
-      toast.error(error.message);
+      console.error('Erro ao salvar prompt:', error);
+      toast.error('Erro ao salvar o prompt');
     } finally {
-      setLoading(false);
+      setIsSaving(false);
     }
   };
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+      <DashboardLayout title="Criar Novo Prompt">
         <Head>
-          <title>Criar Prompt | CriaPrompt</title>
-          <meta name="description" content="Crie seus prompts personalizados" />
+          <title>Criar Novo Prompt | CriaPrompt</title>
+          <meta name="description" content="Crie um novo prompt para IA" />
         </Head>
-
-        <Header />
         
         <ToastContainer position="top-right" autoClose={3000} />
-
-        <main className="container-app py-10">
-          <div className="max-w-4xl mx-auto">
-            <h1 className="text-3xl font-bold text-center text-gray-800 mb-8 relative">
-              <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-                Criar Novo Prompt
-              </span>
-            </h1>
-
-            <div className="bg-white rounded-xl shadow-lg p-6 md:p-8 transition-all duration-300 hover:shadow-xl">
-              {error && (
-                <div className="mb-6 p-4 rounded-lg bg-red-50 text-red-700 border-l-4 border-red-500 animate-fade-in">
-                  <p className="font-medium">Erro:</p>
-                  <p>{error}</p>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label htmlFor="titulo" className="block text-gray-700 font-medium mb-2">
-                      Título
+        
+        <div className="container max-w-6xl mx-auto">
+          <div className="flex flex-col space-y-2 sm:flex-row sm:items-center sm:justify-between sm:space-y-0 mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Criar Novo Prompt</h1>
+              <p className="text-muted-foreground">
+                Crie um prompt personalizado para compartilhar com a comunidade.
+              </p>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => router.back()}
+              className="sm:self-end"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Voltar
+            </Button>
+          </div>
+          
+          <div className="grid gap-6 md:grid-cols-2">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center">
+                    <FileText className="h-4 w-4 mr-2" /> 
+                    Informações Básicas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor="titulo">
+                      Título <span className="text-red-500">*</span>
                     </label>
                     <input
                       id="titulo"
                       type="text"
                       value={titulo}
                       onChange={(e) => setTitulo(e.target.value)}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                      placeholder="Dê um título para seu prompt"
+                      placeholder="Nome do seu prompt"
+                      className="w-full p-2 rounded-md border border-input bg-background"
                       required
                     />
                   </div>
-
-                  <div>
-                    <label htmlFor="categoria" className="block text-gray-700 font-medium mb-2">
-                      Categoria
-                    </label>
-                    <select
-                      id="categoria"
-                      value={categoria}
-                      onChange={(e) => setCategoria(e.target.value)}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200 bg-white"
-                    >
-                      <option value="geral">Geral</option>
-                      <option value="criativo">Criativo</option>
-                      <option value="academico">Acadêmico</option>
-                      <option value="profissional">Profissional</option>
-                      <option value="imagem">Geração de Imagem</option>
-                      <option value="codigo">Programação</option>
-                      <option value="outro">Outro</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Campo de descrição com botão de geração automática */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label htmlFor="descricao" className="block text-gray-700 font-medium">
-                      Descrição
-                    </label>
-                    <button
-                      type="button"
-                      onClick={gerarDescricao}
-                      disabled={gerandoDescricao || !prompt}
-                      className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <FaWandMagicSparkles className="mr-1" />
-                      {gerandoDescricao ? 'Gerando...' : 'Gerar descrição automática'}
-                    </button>
-                  </div>
-                  <textarea
-                    id="descricao"
-                    value={descricao}
-                    onChange={(e) => setDescricao(e.target.value)}
-                    rows={3}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                    placeholder="Adicione uma breve descrição sobre o que esse prompt faz"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Uma boa descrição ajuda outros usuários a entenderem o propósito do seu prompt
-                  </p>
-                </div>
-
-                <div>
-                  <label htmlFor="tags" className="block text-gray-700 font-medium mb-2">
-                    Tags (até 5)
-                  </label>
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {tags.map((tag, index) => (
-                      <span 
-                        key={index} 
-                        className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm flex items-center group"
+                  
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium" htmlFor="categoria">
+                        Categoria <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        id="categoria"
+                        value={categoria}
+                        onChange={(e) => setCategoria(e.target.value)}
+                        className="w-full p-2 rounded-md border border-input bg-background"
                       >
-                        #{tag}
-                        <button 
-                          type="button"
-                          onClick={() => removerTag(tag)}
-                          className="ml-2 text-indigo-600 hover:text-indigo-800 opacity-70 group-hover:opacity-100"
-                        >
-                          <FiTrash2 size={14} />
-                        </button>
-                      </span>
-                    ))}
+                        <option value="">Selecione uma categoria</option>
+                        {categorias.map((cat) => (
+                          <option key={cat.id} value={cat.nome}>
+                            {cat.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium" htmlFor="subcategoria">
+                        Subcategoria
+                      </label>
+                      <select
+                        id="subcategoria"
+                        value={subcategoria}
+                        onChange={(e) => setSubcategoria(e.target.value)}
+                        className="w-full p-2 rounded-md border border-input bg-background"
+                        disabled={!subcategoriasDisponiveis.length}
+                      >
+                        <option value="">Selecione uma subcategoria</option>
+                        {subcategoriasDisponiveis.map((sub) => (
+                          <option key={sub.id} value={sub.nome}>
+                            {sub.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      id="tags"
-                      type="text"
-                      value={tagInput}
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyDown={handleTagKeyDown}
-                      className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                      placeholder="Digite tags e pressione Enter"
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium" htmlFor="descricao">
+                        Descrição
+                      </label>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={gerarDescricao}
+                        disabled={isGeneratingDescription || !prompt || prompt.length < 10}
+                        className="h-7 px-2 text-xs flex items-center"
+                      >
+                        {isGeneratingDescription ? (
+                          <>
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            Gerando...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="mr-1 h-3 w-3" />
+                            Gerar com IA
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <textarea
+                      id="descricao"
+                      value={descricao}
+                      onChange={(e) => setDescricao(e.target.value)}
+                      placeholder="Descreva seu prompt brevemente"
+                      className="w-full p-2 rounded-md border border-input bg-background min-h-[80px]"
                     />
-                    {sugestoesTags.length > 0 && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                        {sugestoesTags.map((sugestao, index) => (
-                          <div 
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">Visibilidade:</span>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="publico"
+                        name="visibilidade"
+                        checked={isPublico}
+                        onChange={() => setIsPublico(true)}
+                        className="rounded-full"
+                      />
+                      <label htmlFor="publico" className="text-sm cursor-pointer">
+                        Público
+                      </label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="privado"
+                        name="visibilidade"
+                        checked={!isPublico}
+                        onChange={() => setIsPublico(false)}
+                        className="rounded-full"
+                      />
+                      <label htmlFor="privado" className="text-sm cursor-pointer">
+                        Privado
+                      </label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">
+                    Conteúdo do Prompt <span className="text-red-500">*</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-muted-foreground">
+                        Use o formato (campo) para adicionar campos personalizáveis
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={gerarComIA}
+                        disabled={isGeneratingAi}
+                        className="h-8 text-xs"
+                      >
+                        {isGeneratingAi ? (
+                          <>
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            Gerando...
+                          </>
+                        ) : (
+                          <>
+                            <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+                            Gerar Prompt com IA
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <textarea
+                      id="prompt"
+                      value={prompt}
+                      onChange={handlePromptChange}
+                      placeholder="Digite seu prompt aqui. Use (campo) para campos personalizáveis, como: Crie um resumo sobre (tema) com (quantidade) palavras."
+                      className="w-full p-3 rounded-md border border-input bg-background font-mono text-sm min-h-[180px]"
+                      required
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Tags (até 10)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="relative">
+                    <div className="flex items-center">
+                      <input
+                        type="text"
+                        value={tagInput}
+                        onChange={(e) => {
+                          setTagInput(e.target.value);
+                          buscarSugestoesTags(e.target.value);
+                        }}
+                        onKeyDown={handleTagKeyDown}
+                        placeholder="Adicionar tag"
+                        className="w-full p-2 pr-8 rounded-md border border-input bg-background"
+                        ref={tagInputRef}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => adicionarTag(tagInput)}
+                        className="absolute right-0 h-full px-2"
+                        disabled={!tagInput.trim() || tags.includes(tagInput.trim().toLowerCase())}
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    
+                    {showSugestoes && sugestoesTags.length > 0 && (
+                      <div
+                        ref={sugestoesRef}
+                        className="absolute z-10 mt-1 w-full rounded-md border border-input bg-popover shadow-md"
+                      >
+                        {sugestoesTags.map((tag, index) => (
+                          <div
                             key={index}
-                            className="px-4 py-2 cursor-pointer hover:bg-indigo-50 transition-colors duration-150"
+                            className="p-2 hover:bg-accent cursor-pointer text-sm"
                             onClick={() => {
-                              adicionarTag(sugestao);
+                              adicionarTag(tag);
                             }}
                           >
-                            #{sugestao}
+                            {tag}
                           </div>
                         ))}
                       </div>
                     )}
-                    {carregandoSugestoes && (
-                      <div className="absolute right-3 top-3">
-                        <svg className="animate-spin h-5 w-5 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Pressione Enter para adicionar cada tag. Tags ajudam na descoberta do seu prompt.
-                  </p>
-                </div>
-                
-                {/* Campos personalizados */}
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-gray-700 font-medium">
-                      Campos Personalizáveis
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setMostrarAddCampo(!mostrarAddCampo)}
-                      className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150"
-                    >
-                      <FiPlusCircle className="mr-1" /> Adicionar Campo
-                    </button>
                   </div>
                   
-                  {mostrarAddCampo && (
-                    <div className="bg-gray-50 p-4 rounded-lg mb-4 border border-gray-200 animate-fade-in">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div>
-                          <label htmlFor="nomeCampo" className="block text-gray-700 text-sm font-medium mb-1">
-                            Nome do Campo*
-                          </label>
-                          <input
-                            id="nomeCampo"
-                            type="text"
-                            value={novoCampoNome}
-                            onChange={(e) => setNovoCampoNome(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                            placeholder="Ex: objeto, cenario"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="descCampo" className="block text-gray-700 text-sm font-medium mb-1">
-                            Descrição (opcional)
-                          </label>
-                          <input
-                            id="descCampo"
-                            type="text"
-                            value={novoCampoDescricao}
-                            onChange={(e) => setNovoCampoDescricao(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                            placeholder="Ex: Objeto principal da imagem"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="valorPadrao" className="block text-gray-700 text-sm font-medium mb-1">
-                            Valor Padrão (opcional)
-                          </label>
-                          <input
-                            id="valorPadrao"
-                            type="text"
-                            value={novoCampoValorPadrao}
-                            onChange={(e) => setNovoCampoValorPadrao(e.target.value)}
-                            className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                            placeholder="Ex: gato"
-                          />
-                        </div>
-                      </div>
-                      <div className="flex justify-end space-x-2">
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-1 bg-primary/10 text-primary px-2 py-1 rounded-full text-xs"
+                      >
+                        <span>{tag}</span>
                         <button
                           type="button"
-                          onClick={() => setMostrarAddCampo(false)}
-                          className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-200 transition-colors duration-150"
+                          onClick={() => removerTag(tag)}
+                          className="text-primary hover:text-primary/70"
                         >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={adicionarCampoPersonalizado}
-                          className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors duration-150"
-                        >
-                          Adicionar
+                          <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
-                    </div>
+                    ))}
+                    {tags.length === 0 && (
+                      <p className="text-sm text-muted-foreground italic">
+                        Nenhuma tag adicionada
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div className="flex items-center justify-between pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push('/')}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSaving || !titulo || !prompt}
+                  className="min-w-[120px]"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Salvar Prompt
+                    </>
                   )}
-                  
-                  {camposPersonalizados.length > 0 && (
-                    <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mb-4">
-                      <h3 className="text-sm font-medium text-gray-700 mb-2">Campos adicionados:</h3>
-                      <div className="space-y-2">
-                        {camposPersonalizados.map((campo, index) => (
-                          <div key={index} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-200">
-                            <div className="flex-1">
-                              <span className="font-medium text-indigo-600">#{campo.nome}</span>
-                              {campo.descricao && <p className="text-xs text-gray-500">{campo.descricao}</p>}
-                              {campo.valorPadrao && <p className="text-xs text-gray-600">Valor padrão: {campo.valorPadrao}</p>}
-                            </div>
-                            <div className="flex space-x-2">
-                              <button
+                </Button>
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Preview do Prompt</CardTitle>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={copiarPrompt}
+                      className="h-8 px-2"
+                    >
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      Copiar
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="p-4 rounded-md bg-black/20 border border-border/50 min-h-[100px] font-mono text-sm whitespace-pre-wrap">
+                    {previewText || (
+                      <span className="text-muted-foreground italic">
+                        O preview do seu prompt aparecerá aqui
+                      </span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Campos Personalizados</CardTitle>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={adicionarCampoPersonalizado}
+                      className="h-8 px-2"
+                    >
+                      <span className="text-xs">Adicionar</span>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {camposPersonalizados.length > 0 ? (
+                    <div className="space-y-4">
+                      {camposPersonalizados.map((campo, index) => (
+                        <div key={index} className="space-y-2 p-3 rounded-md border border-border/50 bg-black/10">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-2">
+                              <Button
                                 type="button"
+                                size="sm"
+                                variant="ghost"
                                 onClick={() => inserirCampoNoPrompt(campo)}
-                                className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-50 transition-colors duration-150"
-                                title="Inserir no prompt"
+                                className="h-7 px-2 text-xs"
                               >
-                                <FiPlusCircle size={16} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removerCampoPersonalizado(index)}
-                                className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-50 transition-colors duration-150"
-                                title="Remover campo"
-                              >
-                                <FiTrash2 size={16} />
-                              </button>
+                                Inserir
+                              </Button>
+                              <span className="font-medium text-sm">{campo.nome}</span>
                             </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removerCampoPersonalizado(index)}
+                              className="h-7 w-7 p-0"
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Dica: Use os campos inserindo #{"{nome do campo}"} no texto do prompt
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={campo.placeholder}
+                              onChange={(e) =>
+                                atualizarCampoPersonalizado(index, "placeholder", e.target.value)
+                              }
+                              placeholder="Placeholder"
+                              className="w-full p-2 text-sm rounded-md border border-input bg-background"
+                            />
+                            <input
+                              type="text"
+                              value={campo.valor}
+                              onChange={(e) => {
+                                atualizarCampoPersonalizado(index, "valor", e.target.value);
+                                atualizarPreview();
+                              }}
+                              placeholder="Valor padrão (opcional)"
+                              className="w-full p-2 text-sm rounded-md border border-input bg-background"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-6">
+                      <p className="text-sm text-muted-foreground">
+                        Nenhum campo personalizado detectado
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Use o formato (nome) no seu prompt para criar campos
                       </p>
                     </div>
                   )}
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label htmlFor="prompt" className="block text-gray-700 font-medium">
-                      Seu Prompt
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setMostrarPreview(!mostrarPreview)}
-                        className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150"
-                        title={mostrarPreview ? "Ocultar prévia" : "Mostrar prévia"}
-                      >
-                        {mostrarPreview ? <FiEyeOff className="mr-1" /> : <FiEye className="mr-1" />}
-                        {mostrarPreview ? "Ocultar prévia" : "Mostrar prévia"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={copiarPrompt}
-                        className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors duration-150"
-                        title="Copiar para área de transferência"
-                      >
-                        <FiCopy className="mr-1" /> Copiar
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {mostrarPreview && (
-                    <div 
-                      className="bg-gray-50 p-4 rounded-lg mb-3 border border-dashed border-gray-300"
-                      dangerouslySetInnerHTML={{ __html: previewPrompt }}
-                    ></div>
-                  )}
-                  
-                  <textarea
-                    id="prompt"
-                    ref={promptRef}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    rows={camposPersonalizados.length > 0 ? 8 : 10}
-                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all duration-200"
-                    placeholder="Digite seu prompt aqui... Use #nomeDoCampo para inserir campos personalizáveis"
-                    required
-                  />
-                </div>
-
-                <div className="flex items-center">
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isPublico}
-                      onChange={(e) => setIsPublico(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                    <span className="ml-3 text-gray-700">Tornar público</span>
-                  </label>
-                  <p className="text-xs text-gray-500 ml-4">
-                    Prompts públicos podem ser visualizados por outros usuários
-                  </p>
-                </div>
-
-                <div className="flex justify-end pt-4">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="flex items-center px-6 py-3 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg disabled:opacity-50"
-                  >
-                    {loading ? (
-                      <>
-                        <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Salvando...
-                      </>
-                    ) : (
-                      <>
-                        <FiSave className="mr-2" /> Salvar Prompt
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Dicas para criar bons prompts</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-2 text-sm">
+                    <li className="flex items-start">
+                      <span className="mr-2 bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs">1</span>
+                      <span>Seja específico e detalhado sobre o que você deseja obter</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs">2</span>
+                      <span>Inclua informações sobre formato, estilo e extensão desejados</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs">3</span>
+                      <span>Use campos personalizáveis para tornar seu prompt mais flexível</span>
+                    </li>
+                    <li className="flex items-start">
+                      <span className="mr-2 bg-primary/20 text-primary rounded-full w-5 h-5 flex items-center justify-center text-xs">4</span>
+                      <span>Evite ambiguidades e forneça exemplos quando necessário</span>
+                    </li>
+                  </ul>
+                </CardContent>
+              </Card>
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </DashboardLayout>
     </AuthGuard>
   );
 }

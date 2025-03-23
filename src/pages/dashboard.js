@@ -1,369 +1,706 @@
-import Head from 'next/head';
-import Header from '../components/Header';
-import AuthGuard from '../components/AuthGuard';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { supabase } from '../lib/supabaseClient';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
-import { FiEdit2, FiTrash2, FiEye, FiLock, FiGlobe, FiCalendar } from 'react-icons/fi';
+import { PlusCircle, Brain, TrendingUp, Share2, Sparkles, Layers, Star, Calendar, Users, Eye, Heart, MessageCircle, Bell, LineChart, Award, BarChart2, History, Clock } from "lucide-react"
+import Link from "next/link"
+import { useState, useEffect } from "react"
+import { supabase } from "../lib/supabaseClient"
+import { Button } from "../components/ui/button"
+import DashboardLayout from "../components/layouts/DashboardLayout"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../components/ui/card"
+import { Badge } from "../components/ui/badge"
+import { toast } from "react-toastify"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs"
+import { Progress } from "../components/ui/progress"
+import { Avatar, AvatarImage, AvatarFallback } from "../components/ui/avatar"
+
+// Dados mockados para quando o banco de dados não retornar informações
+const MOCK_DATA = {
+  userData: {
+    nome: "Usuário",
+    username: "user123",
+    prompts_count: 5
+  },
+  trendingPrompts: [
+    {
+      id: 1,
+      titulo: "Assistente de Escrita para Artigos",
+      descricao: "Auxilia na criação de artigos bem estruturados e persuasivos",
+      categoria: "escrita",
+      views: 245,
+      created_at: new Date(Date.now() - 3600000).toISOString() // 1 hora atrás
+    },
+    {
+      id: 2,
+      titulo: "Gerador de Emails Profissionais",
+      descricao: "Cria emails formais para comunicação empresarial",
+      categoria: "negócios",
+      views: 198,
+      created_at: new Date(Date.now() - 7200000).toISOString() // 2 horas atrás
+    },
+    {
+      id: 3,
+      titulo: "Análise de Dados Simplificada",
+      descricao: "Interpreta datasets complexos e gera insights",
+      categoria: "dados",
+      views: 176,
+      created_at: new Date(Date.now() - 86400000).toISOString() // 1 dia atrás
+    },
+    {
+      id: 4,
+      titulo: "Ideias para Conteúdo de Redes Sociais",
+      descricao: "Sugestões de posts e estratégias para redes sociais",
+      categoria: "marketing",
+      views: 154,
+      created_at: new Date(Date.now() - 172800000).toISOString() // 2 dias atrás
+    }
+  ],
+  sharedPrompts: [
+    {
+      id: 5,
+      titulo: "Conversor de Linguagem Técnica para Leigos",
+      descricao: "Traduz termos técnicos para linguagem acessível",
+      categoria: "educação",
+      compartilhamentos: 32
+    },
+    {
+      id: 6,
+      titulo: "Assistente de Brainstorming",
+      descricao: "Gera ideias criativas para projetos e soluções",
+      categoria: "criativo",
+      compartilhamentos: 28
+    },
+    {
+      id: 7,
+      titulo: "Resumidor de Livros e Artigos",
+      descricao: "Cria resumos concisos mantendo os pontos principais",
+      categoria: "educação",
+      compartilhamentos: 21
+    }
+  ],
+  recommendedModels: [
+    {
+      id: 8,
+      titulo: "GPT-4 Turbo para Análises Avançadas",
+      descricao: "Ideal para processamento complexo e análises aprofundadas",
+      tags: ["análise", "avançado", "empresarial"]
+    },
+    {
+      id: 9,
+      titulo: "Claude 3 para Conteúdo Criativo",
+      descricao: "Especializado em geração de textos criativos e persuasivos",
+      tags: ["criatividade", "redação", "marketing"]
+    },
+    {
+      id: 10,
+      titulo: "Midjourney para Descrições Visuais",
+      descricao: "Otimizado para criar prompts que geram imagens detalhadas",
+      tags: ["visual", "imagens", "design"]
+    }
+  ],
+  topCategories: [
+    { categoria: "Marketing", acessos: 583, salvos: 245 },
+    { categoria: "Educação", acessos: 472, salvos: 198 },
+    { categoria: "Criativo", acessos: 367, salvos: 154 },
+    { categoria: "Programação", acessos: 312, salvos: 132 },
+    { categoria: "Negócios", acessos: 289, salvos: 109 }
+  ]
+}
 
 export default function Dashboard() {
-  const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [prompts, setPrompts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [userData, setUserData] = useState(null)
+  const [userPrompts, setUserPrompts] = useState([])
+  const [userModels, setUserModels] = useState([])
+  const [recentActivity, setRecentActivity] = useState([])
+  const [notifications, setNotifications] = useState([])
   const [stats, setStats] = useState({
-    totalPrompts: 0,
-    publicPrompts: 0,
-    privatePrompts: 0,
-    totalViews: 0,
-    favoritos: 0,
-    categoriasUsadas: []
-  });
+    total_views: 0,
+    total_likes: 0,
+    total_shares: 0,
+    total_comments: 0
+  })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        // Obter dados da sessão
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          console.log('Sem sessão, redirecionando para login');
-          router.push('/auth/login?redirect=/dashboard');
-          return;
-        }
-        
-        setUser(session.user);
-        
-        // Tentar usar a API direta do Supabase se a API falhar
-        try {
-          // Primeiro método: via API customizada
-          console.log('Tentando buscar dados do dashboard via API...');
-          const response = await fetch('/api/dashboard-data', {
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`
-            },
-            credentials: 'include'
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log('Dados do dashboard carregados via API');
-            
-            // Definir os dados
-            setPrompts(data.prompts || []);
-            setStats(data.stats);
-            return;
-          }
-          
-          // Se chegou aqui, a API falhou
-          const errorText = await response.text().catch(() => 'Erro desconhecido');
-          console.error('Erro na resposta da API:', response.status, errorText);
-          throw new Error(`Erro ao carregar dados do dashboard: ${response.status}`);
-        } catch (apiError) {
-          console.error('Falha na API, usando Supabase diretamente:', apiError);
-          
-          // Método alternativo: usar o Supabase diretamente
-          // 1. Buscar prompts do usuário
-          const { data: promptsData, error: promptsError } = await supabase
-            .from('prompts')
-            .select(`
-              id,
-              titulo,
-              texto,
-              categoria,
-              publico,
-              views,
-              created_at
-            `)
-            .eq('user_id', session.user.id)
-            .order('created_at', { ascending: false });
-          
-          if (promptsError) throw promptsError;
-          setPrompts(promptsData || []);
-          
-          // 2. Buscar contagem de favoritos
-          const { count: favoritosCount, error: favoritosError } = await supabase
-            .from('favoritos')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', session.user.id);
-          
-          if (favoritosError) throw favoritosError;
-          
-          // 3. Calcular estatísticas
-          const totalPrompts = promptsData.length;
-          const publicPrompts = promptsData.filter(p => p.publico).length;
-          const privatePrompts = totalPrompts - publicPrompts;
-          const totalViews = promptsData.reduce((sum, prompt) => sum + (prompt.views || 0), 0);
-          
-          // 4. Contar categorias usadas
-          const categorias = {};
-          promptsData.forEach(prompt => {
-            const categoria = prompt.categoria || 'geral';
-            categorias[categoria] = (categorias[categoria] || 0) + 1;
-          });
-          
-          const categoriasUsadas = Object.entries(categorias)
-            .map(([nome, count]) => ({ nome, count }))
-            .sort((a, b) => b.count - a.count);
-          
-          // 5. Atualizar o estado com os dados coletados
-          setStats({
-            totalPrompts,
-            publicPrompts,
-            privatePrompts,
-            totalViews,
-            favoritos: favoritosCount || 0,
-            categoriasUsadas
-          });
-          
-          console.log('Dados carregados diretamente do Supabase');
-        }
-      } catch (error) {
-        console.error('Erro ao carregar dados do dashboard:', error);
-        setError(error.message || 'Ocorreu um erro ao carregar seus dados');
-      } finally {
-        setLoading(false);
-      }
-    };
+    carregarDados();
+  }, []);
 
-    fetchDashboardData();
-  }, [router]);
+  const obterSaudacao = () => {
+    const hora = new Date().getHours();
+    if (hora < 12) return "Bom dia";
+    if (hora < 18) return "Boa tarde";
+    return "Boa noite";
+  };
 
-  const handleDelete = async (promptId, e) => {
-    // Prevenir navegação para a página de detalhes
-    e.stopPropagation();
-    e.preventDefault();
+  const formatarDataRelativa = (dataString) => {
+    const data = new Date(dataString);
+    const agora = new Date();
+    const diffMs = agora - data;
+    const diffSeg = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSeg / 60);
+    const diffHora = Math.floor(diffMin / 60);
+    const diffDia = Math.floor(diffHora / 24);
     
-    if (!confirm('Tem certeza que deseja excluir este prompt?')) {
-      return;
-    }
+    if (diffSeg < 60) return 'agora mesmo';
+    if (diffMin < 60) return `${diffMin} min atrás`;
+    if (diffHora < 24) return `${diffHora}h atrás`;
+    if (diffDia < 7) return `${diffDia} dias atrás`;
+    
+    return data.toLocaleDateString('pt-BR');
+  };
 
+  const carregarDados = async () => {
     try {
-      // Obter a sessão atual para pegar o token de acesso
-      const { data: { session } } = await supabase.auth.getSession();
+      setLoading(true);
+      setError(null);
+      
+      // Verificar sessão do usuário
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error(`Erro na sessão: ${sessionError.message}`);
+      }
       
       if (!session) {
-        throw new Error('Sessão expirada. Faça login novamente.');
+        throw new Error("Usuário não autenticado");
       }
       
-      // Tentar excluir diretamente pelo Supabase
-      const { error } = await supabase
+      // Buscar dados do perfil
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
+      
+      if (profileError) {
+        console.warn('Erro ao buscar perfil:', profileError);
+        // Usar dados mockados como fallback
+        setUserData({
+          nome: "Usuário",
+          username: "user123",
+          prompts_count: 0,
+          models_count: 0
+        });
+      } else {
+        setUserData(profileData);
+      }
+      
+      // Buscar prompts do usuário
+      const { data: promptsData, error: promptsError } = await supabase
         .from('prompts')
-        .delete()
-        .eq('id', promptId)
-        .eq('user_id', session.user.id);
+        .select('id, titulo, descricao, categoria, views, likes, created_at')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
       
-      if (error) throw error;
-
-      // Atualizar a lista de prompts removendo o excluído
-      setPrompts(prompts.filter(p => p.id !== promptId));
+      if (promptsError) {
+        console.warn('Erro ao buscar prompts do usuário:', promptsError);
+      } else {
+        setUserPrompts(promptsData || []);
+      }
       
-      // Atualizar estatísticas
-      const promptExcluido = prompts.find(p => p.id === promptId);
+      // Buscar modelos do usuário
+      const { data: modelsData, error: modelsError } = await supabase
+        .from('modelos')
+        .select('id, nome, descricao, views, created_at')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
       
-      setStats(prev => ({
-        ...prev,
-        totalPrompts: prev.totalPrompts - 1,
-        publicPrompts: promptExcluido?.publico ? prev.publicPrompts - 1 : prev.publicPrompts,
-        privatePrompts: !promptExcluido?.publico ? prev.privatePrompts - 1 : prev.privatePrompts,
-        totalViews: prev.totalViews - (promptExcluido?.views || 0)
-      }));
+      if (modelsError) {
+        console.warn('Erro ao buscar modelos do usuário:', modelsError);
+      } else {
+        setUserModels(modelsData || []);
+      }
       
-      toast.success('Prompt excluído com sucesso!');
+      // Buscar atividade recente (likes, comentários, compartilhamentos)
+      const { data: activityData, error: activityError } = await supabase
+        .from('activity')
+        .select('id, prompt_id, user_id, action_type, created_at, profiles(nome, username, avatar_url)')
+        .eq('target_user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (activityError) {
+        console.warn('Erro ao buscar atividade recente:', activityError);
+      } else {
+        setRecentActivity(activityData || []);
+      }
+      
+      // Buscar notificações do usuário
+      const { data: notificationsData, error: notificationsError } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      if (notificationsError) {
+        console.warn('Erro ao buscar notificações:', notificationsError);
+      } else {
+        setNotifications(notificationsData || []);
+      }
+      
+      // Buscar estatísticas do usuário
+      const { data: statsData, error: statsError } = await supabase
+        .rpc('get_user_stats', { user_id: session.user.id });
+      
+      if (statsError) {
+        console.warn('Erro ao buscar estatísticas:', statsError);
+      } else {
+        setStats(statsData || {
+          total_views: 0,
+          total_likes: 0,
+          total_shares: 0,
+          total_comments: 0
+        });
+      }
     } catch (error) {
-      console.error('Erro ao excluir prompt:', error);
-      toast.error('Erro ao excluir prompt. Tente novamente.');
+      console.error('Erro ao carregar dados do dashboard:', error);
+      setError(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const navigateToPrompt = (id) => {
-    router.push(`/prompts/${id}`);
+  const renderActivityIcon = (actionType) => {
+    switch (actionType) {
+      case 'like':
+        return <Heart className="h-5 w-5 text-rose-400" />;
+      case 'comment':
+        return <MessageCircle className="h-5 w-5 text-blue-400" />;
+      case 'share':
+        return <Share2 className="h-5 w-5 text-green-400" />;
+      case 'view':
+        return <Eye className="h-5 w-5 text-indigo-400" />;
+      default:
+        return <Bell className="h-5 w-5 text-gray-400" />;
+    }
   };
 
-  const navigateToEdit = (id, e) => {
-    e.stopPropagation();
-    router.push(`/prompts/editar/${id}`);
+  const renderActivityText = (activity) => {
+    const userName = activity.profiles?.nome || activity.profiles?.username || 'Alguém';
+    
+    switch (activity.action_type) {
+      case 'like':
+        return <span><span className="font-medium">{userName}</span> curtiu seu prompt</span>;
+      case 'comment':
+        return <span><span className="font-medium">{userName}</span> comentou em seu prompt</span>;
+      case 'share':
+        return <span><span className="font-medium">{userName}</span> compartilhou seu prompt</span>;
+      case 'view':
+        return <span><span className="font-medium">{userName}</span> visualizou seu prompt</span>;
+      default:
+        return <span><span className="font-medium">{userName}</span> interagiu com seu conteúdo</span>;
+    }
   };
+
+  if (loading) {
+    return (
+      <DashboardLayout title="Dashboard">
+        <div className="flex items-center justify-center h-[70vh]">
+          <div className="text-center space-y-4">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+            <p className="text-muted-foreground">Carregando seu dashboard...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error) {
+    return (
+      <DashboardLayout title="Dashboard">
+        <div className="flex items-center justify-center h-[70vh]">
+          <div className="text-center space-y-4">
+            <div className="bg-red-500/10 p-3 rounded-full mx-auto w-fit">
+              <Bell className="h-8 w-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-semibold">Erro ao carregar dados</h3>
+            <p className="text-muted-foreground">{error}</p>
+            <Button onClick={carregarDados}>Tentar novamente</Button>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
-        <Head>
-          <title>Dashboard | CriaPrompt</title>
-          <meta name="description" content="Seu dashboard na plataforma CriaPrompt" />
-        </Head>
-
-        <Header />
-        
-        <ToastContainer position="top-right" autoClose={3000} />
-
-        <main className="container-app py-10">
-          <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">
-              Seu Dashboard
-            </span>
+    <DashboardLayout title="Dashboard">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Cabeçalho com saudação */}
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold">
+            {obterSaudacao()}, {userData?.nome || 'Usuário'}!
           </h1>
-
-          {error && (
-            <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6">
-              <p className="font-medium">Ocorreu um erro:</p>
-              <p>{error}</p>
-              <button 
-                onClick={() => window.location.reload()}
-                className="mt-2 text-sm text-red-700 underline"
-              >
-                Tentar novamente
-              </button>
-            </div>
-          )}
-
-          <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <h2 className="text-xl font-semibold mb-4">Bem-vindo, {user?.email}</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-indigo-50 p-4 rounded-lg">
-                <div className="text-3xl font-bold text-indigo-600">{stats.totalPrompts}</div>
-                <div className="text-sm text-gray-600">Prompts criados</div>
-                <div className="mt-2 text-xs text-gray-500">
-                  <span className="mr-2">📢 {stats.publicPrompts} públicos</span>
-                  <span>🔒 {stats.privatePrompts} privados</span>
+          <p className="text-muted-foreground">
+            Confira seu desempenho e interações recentes na plataforma
+          </p>
+        </div>
+        
+        {/* Estatísticas do Usuário */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="bg-gradient-to-br from-indigo-500/5 to-indigo-500/10 border-indigo-500/20">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-muted-foreground text-sm mb-1">Visualizações</p>
+                  <h3 className="text-2xl font-bold">{stats.total_views || 0}</h3>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-indigo-500/10 flex items-center justify-center">
+                  <Eye className="h-5 w-5 text-indigo-400" />
                 </div>
               </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <div className="text-3xl font-bold text-green-600">{stats.totalViews}</div>
-                <div className="text-sm text-gray-600">Visualizações</div>
-                {stats.totalPrompts > 0 && (
-                  <div className="mt-2 text-xs text-gray-500">
-                    Média: {Math.round(stats.totalViews / stats.totalPrompts)} por prompt
+              <Progress value={65} className="h-1 mt-4 bg-indigo-500/20" indicatorClassName="bg-indigo-500" />
+              <p className="text-xs text-muted-foreground mt-2">+12% em relação à semana passada</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-rose-500/5 to-rose-500/10 border-rose-500/20">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-muted-foreground text-sm mb-1">Curtidas</p>
+                  <h3 className="text-2xl font-bold">{stats.total_likes || 0}</h3>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-rose-500/10 flex items-center justify-center">
+                  <Heart className="h-5 w-5 text-rose-400" />
+                </div>
+              </div>
+              <Progress value={42} className="h-1 mt-4 bg-rose-500/20" indicatorClassName="bg-rose-500" />
+              <p className="text-xs text-muted-foreground mt-2">+8% em relação à semana passada</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-green-500/5 to-green-500/10 border-green-500/20">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-muted-foreground text-sm mb-1">Compartilhamentos</p>
+                  <h3 className="text-2xl font-bold">{stats.total_shares || 0}</h3>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-green-500/10 flex items-center justify-center">
+                  <Share2 className="h-5 w-5 text-green-400" />
+                </div>
+              </div>
+              <Progress value={28} className="h-1 mt-4 bg-green-500/20" indicatorClassName="bg-green-500" />
+              <p className="text-xs text-muted-foreground mt-2">+5% em relação à semana passada</p>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-gradient-to-br from-blue-500/5 to-blue-500/10 border-blue-500/20">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-muted-foreground text-sm mb-1">Comentários</p>
+                  <h3 className="text-2xl font-bold">{stats.total_comments || 0}</h3>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                  <MessageCircle className="h-5 w-5 text-blue-400" />
+                </div>
+              </div>
+              <Progress value={18} className="h-1 mt-4 bg-blue-500/20" indicatorClassName="bg-blue-500" />
+              <p className="text-xs text-muted-foreground mt-2">+2% em relação à semana passada</p>
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Conteúdo Principal */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Coluna 1: Atividade Recente + Estatísticas */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Atividade Recente */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center">
+                    <History className="mr-2 h-5 w-5 text-primary" />
+                    Atividade Recente
+                  </CardTitle>
+                  
+                  <Link href="/atividades" className="text-sm text-primary hover:underline">
+                    Ver todas
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {recentActivity.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentActivity.slice(0, 5).map((activity, index) => (
+                      <div key={index} className="flex items-start gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          {renderActivityIcon(activity.action_type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <div>{renderActivityText(activity)}</div>
+                            <span className="text-xs text-muted-foreground">
+                              {formatarDataRelativa(activity.created_at)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Clock className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground">Nenhuma atividade recente para mostrar</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Compartilhe seus prompts para começar a receber interações
+                    </p>
                   </div>
                 )}
-              </div>
-              <div className="bg-red-50 p-4 rounded-lg">
-                <div className="text-3xl font-bold text-red-600">{stats.favoritos}</div>
-                <div className="text-sm text-gray-600">Favoritos</div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
             
-            {stats.categoriasUsadas?.length > 0 && (
-              <div className="mb-6">
-                <h3 className="text-md font-semibold mb-2">Suas categorias mais usadas:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {stats.categoriasUsadas.map((cat) => (
-                    <span key={cat.nome} className="px-3 py-1 bg-gray-100 text-gray-800 rounded-full text-sm">
-                      {cat.nome} ({cat.count})
-                    </span>
-                  ))}
+            {/* Seus Prompts */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center">
+                    <Sparkles className="mr-2 h-5 w-5 text-primary" />
+                    Seus Prompts
+                  </CardTitle>
+                  
+                  <Link href="/meus-prompts" className="text-sm text-primary hover:underline">
+                    Ver todos
+                  </Link>
                 </div>
-              </div>
-            )}
-            
-            <button
-              onClick={() => router.push('/criar')}
-              className="inline-block bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-2 px-4 rounded-md hover:from-indigo-700 hover:to-purple-700 transition-all duration-300 shadow-md hover:shadow-lg"
-            >
-              Criar Novo Prompt
-            </button>
-          </div>
-
-          <div className="mb-8">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-semibold">Seus Prompts</h2>
-              
-              {prompts.length > 0 && (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => router.push('/dashboard?filtro=recentes')}
-                    className="text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Mais recentes
-                  </button>
-                  <button
-                    onClick={() => router.push('/dashboard?filtro=populares')}
-                    className="text-sm text-indigo-600 hover:text-indigo-800"
-                  >
-                    Mais visualizados
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            {loading ? (
-              <div className="text-center py-10">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
-                <p className="mt-2">Carregando seus prompts...</p>
-              </div>
-            ) : prompts.length === 0 ? (
-              <div className="bg-white rounded-lg shadow p-6 text-center">
-                <p className="text-gray-600 mb-4">
-                  Você ainda não criou nenhum prompt.
-                </p>
-                <button
-                  onClick={() => router.push('/criar')}
-                  className="inline-block bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300"
-                >
-                  Criar Seu Primeiro Prompt
-                </button>
-              </div>
-            ) : (
-              <div className="grid gap-6 md:grid-cols-2">
-                {prompts.map((prompt) => (
-                  <div 
-                    key={prompt.id}
-                    className="bg-white rounded-lg shadow-md hover:shadow-lg p-6 cursor-pointer transition-all duration-300"
-                    onClick={() => navigateToPrompt(prompt.id)}
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <h3 className="font-semibold text-lg">{prompt.titulo}</h3>
-                      <span className="inline-block px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm">
-                        {prompt.categoria}
-                      </span>
-                    </div>
-                    <p className="text-gray-700 mb-4 line-clamp-3">{prompt.texto}</p>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-3">
-                        <span className="text-sm text-gray-500 flex items-center">
-                          {prompt.publico ? 
-                            <FiGlobe className="mr-1" size={14} /> : 
-                            <FiLock className="mr-1" size={14} />
-                          }
-                          {prompt.publico ? 'Público' : 'Privado'}
-                        </span>
-                        <span className="text-sm text-gray-500 flex items-center">
-                          <FiEye className="mr-1" size={14} />
-                          {prompt.views || 0}
-                        </span>
-                        <span className="text-sm text-gray-500 flex items-center">
-                          <FiCalendar className="mr-1" size={14} />
-                          {new Date(prompt.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={(e) => navigateToEdit(prompt.id, e)}
-                          className="text-blue-600 hover:text-blue-800 flex items-center"
-                        >
-                          <FiEdit2 size={16} className="mr-1" />
-                          Editar
-                        </button>
-                        <button 
-                          onClick={(e) => handleDelete(prompt.id, e)}
-                          className="text-red-600 hover:text-red-800 flex items-center"
-                        >
-                          <FiTrash2 size={16} className="mr-1" />
-                          Excluir
-                        </button>
-                      </div>
-                    </div>
+              </CardHeader>
+              <CardContent>
+                {userPrompts.length > 0 ? (
+                  <div className="space-y-3">
+                    {userPrompts.map((prompt, index) => (
+                      <Link 
+                        key={index} 
+                        href={`/prompts/${prompt.id}`}
+                        className="flex justify-between items-center p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="overflow-hidden">
+                          <h4 className="font-medium truncate">{prompt.titulo}</h4>
+                          <p className="text-xs text-muted-foreground truncate">{prompt.descricao}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>{prompt.views || 0}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Heart className="h-3.5 w-3.5" />
+                            <span>{prompt.likes || 0}</span>
+                          </div>
+                          <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20 text-xs">
+                            {prompt.categoria || "Geral"}
+                          </Badge>
+                        </div>
+                      </Link>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
+                ) : (
+                  <div className="text-center py-8">
+                    <Sparkles className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground">Você ainda não criou nenhum prompt</p>
+                    <Button 
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => router.push('/criar')}
+                    >
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Criar meu primeiro prompt
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            
+            {/* Seus Modelos */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center">
+                    <Brain className="mr-2 h-5 w-5 text-primary" />
+                    Seus Modelos
+                  </CardTitle>
+                  
+                  <Link href="/meus-modelos" className="text-sm text-primary hover:underline">
+                    Ver todos
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {userModels.length > 0 ? (
+                  <div className="space-y-3">
+                    {userModels.map((model, index) => (
+                      <Link 
+                        key={index} 
+                        href={`/modelos/${model.id}`}
+                        className="flex justify-between items-center p-3 rounded-lg border border-border hover:border-primary/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="overflow-hidden">
+                          <h4 className="font-medium truncate">{model.nome}</h4>
+                          <p className="text-xs text-muted-foreground truncate">{model.descricao}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>{model.views || 0}</span>
+                          </div>
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Brain className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-muted-foreground">Você ainda não criou nenhum modelo</p>
+                    <Button 
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => router.push('/modelos/criar')}
+                    >
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Criar meu primeiro modelo
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
-        </main>
+          
+          {/* Coluna 2: Notificações, Estatísticas, Dicas */}
+          <div className="space-y-6">
+            {/* Notificações */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center">
+                  <Bell className="mr-2 h-5 w-5 text-primary" />
+                  Notificações
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {notifications.length > 0 ? (
+                  <div className="space-y-3">
+                    {notifications.map((notification, index) => (
+                      <div 
+                        key={index}
+                        className="p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+                            notification.type === 'success' ? 'bg-green-500/10 text-green-500' :
+                            notification.type === 'warning' ? 'bg-amber-500/10 text-amber-500' :
+                            notification.type === 'error' ? 'bg-red-500/10 text-red-500' :
+                            'bg-blue-500/10 text-blue-500'
+                          }`}>
+                            {notification.type === 'success' ? <Award className="h-4 w-4" /> :
+                             notification.type === 'warning' ? <Bell className="h-4 w-4" /> :
+                             notification.type === 'error' ? <Bell className="h-4 w-4" /> :
+                             <Bell className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="text-sm">{notification.message}</p>
+                            <span className="text-xs text-muted-foreground">
+                              {formatarDataRelativa(notification.created_at)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <p className="text-muted-foreground text-sm">Nenhuma notificação no momento</p>
+                  </div>
+                )}
+              </CardContent>
+              <CardFooter className="pt-0">
+                <Button variant="outline" className="w-full">
+                  Ver todas as notificações
+                </Button>
+              </CardFooter>
+            </Card>
+            
+            {/* Desempenho */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center">
+                  <LineChart className="mr-2 h-5 w-5 text-primary" />
+                  Seu Desempenho
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-5">
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Visualizações</span>
+                      <span className="font-medium">{stats.total_views || 0}</span>
+                    </div>
+                    <Progress value={75} className="h-2" />
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Curtidas</span>
+                      <span className="font-medium">{stats.total_likes || 0}</span>
+                    </div>
+                    <Progress value={60} className="h-2" />
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Comentários</span>
+                      <span className="font-medium">{stats.total_comments || 0}</span>
+                    </div>
+                    <Progress value={40} className="h-2" />
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span>Compartilhamentos</span>
+                      <span className="font-medium">{stats.total_shares || 0}</span>
+                    </div>
+                    <Progress value={25} className="h-2" />
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter className="pt-2 text-xs text-muted-foreground">
+                Estatísticas baseadas nos últimos 30 dias
+              </CardFooter>
+            </Card>
+            
+            {/* Dica do Dia */}
+            <Card className="bg-primary/5 border-primary/20">
+              <CardContent className="p-6">
+                <div className="text-center space-y-4">
+                  <div className="mx-auto h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Sparkles className="h-5 w-5 text-primary" />
+                  </div>
+                  <h3 className="font-medium">Dica do Dia</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Adicione tags relevantes aos seus prompts para aumentar sua visibilidade nas buscas e alcançar mais pessoas.
+                  </p>
+                  <Button variant="outline" className="border-primary/20 text-primary hover:bg-primary/10">
+                    Mais dicas
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            
+            {/* Botões de Ação Rápida */}
+            <div className="grid grid-cols-2 gap-4">
+              <Button className="flex flex-col h-auto py-4">
+                <PlusCircle className="h-5 w-5 mb-1" />
+                <span>Novo Prompt</span>
+              </Button>
+              <Button variant="outline" className="flex flex-col h-auto py-4">
+                <Brain className="h-5 w-5 mb-1" />
+                <span>Novo Modelo</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       </div>
-    </AuthGuard>
+    </DashboardLayout>
   );
 }

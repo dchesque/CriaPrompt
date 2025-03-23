@@ -1,0 +1,14 @@
+{
+    "name": "criaprompt-tests",
+    "version": "1.0.0",
+    "description": "Testes automatizados para o CriaPrompt",
+    "main": "test-app.js",
+    "scripts": {
+      "test": "node test-app.js"
+    },
+    "dependencies": {
+      "@supabase/supabase-js": "^2.49.1",
+      "dotenv": "^16.4.1",
+      "node-fetch": "^2.7.0"
+    }
+  }

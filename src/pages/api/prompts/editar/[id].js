@@ -1,9 +1,9 @@
 import Head from 'next/head';
-import Header from '../../../components/Header';
-import AuthGuard from '../../../components/AuthGuard';
+import Header from '../../../../components/Header';
+import AuthGuard from '../../../../components/AuthGuard';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '../../../lib/supabaseClient';
+import { supabase } from '../../../../lib/supabaseClient';
 
 export default function EditarPrompt() {
   const router = useRouter();

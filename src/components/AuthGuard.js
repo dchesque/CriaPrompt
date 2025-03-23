@@ -1,81 +1,60 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
 
 export default function AuthGuard({ children }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Função para verificar sessão
-    const checkSession = async () => {
+    const checkAuth = async () => {
       try {
-        setCheckingSession(true);
         const { data: { session } } = await supabase.auth.getSession();
         
         if (!session) {
-          console.log('AuthGuard: Sem sessão ativa, redirecionando para login');
+          // Redirecionar para a página de login com retorno
           router.push(`/auth/login?redirect=${encodeURIComponent(router.asPath)}`);
           return;
         }
         
-        setUser(session.user);
+        setAuthenticated(true);
       } catch (error) {
-        console.error('Erro ao verificar sessão:', error);
+        console.error('Erro ao verificar autenticação:', error);
         router.push('/auth/login');
       } finally {
-        setCheckingSession(false);
         setLoading(false);
       }
     };
 
-    // Verificar sessão ao montar o componente
-    checkSession();
+    checkAuth();
 
-    // Configurar listener para mudanças de autenticação
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN') {
-          setUser(session.user);
-          setLoading(false);
-        } else if (event === 'SIGNED_OUT') {
-          setUser(null);
-          router.push('/auth/login');
-        } else if (event === 'TOKEN_REFRESHED') {
-          setUser(session.user);
-        } else if (event === 'USER_UPDATED') {
-          setUser(session.user);
-        }
+    // Também monitorar alterações na autenticação
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/');
+      } else if (event === 'SIGNED_IN' && !authenticated) {
+        setAuthenticated(true);
       }
-    );
+    });
 
-    // Limpar subscrição ao desmontar
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+      authListener?.subscription?.unsubscribe();
     };
-  }, [router]);
+  }, [router, authenticated]);
 
-  // Mostrar tela de carregamento enquanto verifica autenticação
-  if (loading || checkingSession) {
+  // Exibir tela de carregamento enquanto verifica autenticação
+  if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-100">
-        <div className="bg-white p-6 rounded-lg shadow-md text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mb-4"></div>
-          <div className="text-lg">Verificando autenticação...</div>
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-2">
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-primary"></div>
+          <p className="text-muted-foreground">Verificando autenticação...</p>
         </div>
       </div>
     );
   }
 
-  // Se tiver um usuário, renderizar os componentes filhos
-  if (user) {
-    return children;
-  }
-
-  // Caso de fallback (não deveria chegar aqui por causa do redirecionamento)
-  return null;
+  // Só renderiza os filhos se estiver autenticado
+  return authenticated ? children : null;
 }

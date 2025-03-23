@@ -1,260 +1,410 @@
-import Head from 'next/head';
-import Header from '../components/Header';
-import AuthGuard from '../components/AuthGuard';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabaseClient';
+import { toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+import Head from 'next/head';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Switch } from '../components/ui/switch';
+import { Moon, Sun, Save, Trash2, Monitor, Bell, Shield, Cog, X, AlertTriangle } from 'lucide-react';
+import DashboardLayout from '../components/layouts/DashboardLayout';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../components/ui/dialog';
 
 export default function Configuracoes() {
-  const [user, setUser] = useState(null);
+  const router = useRouter();
+  const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState({ type: '', text: '' });
-  
-  // Estados para configurações
-  const [darkMode, setDarkMode] = useState(false);
-  const [notificacoesApp, setNotificacoesApp] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
-  const [templatePadrao, setTemplatePadrao] = useState('');
-  
+  const [activeTab, setActiveTab] = useState('aparencia');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [confirmEmailError, setConfirmEmailError] = useState('');
+  const [config, setConfig] = useState({
+    temaEscuro: true,
+    notificacoes: false,
+    emailDigest: false,
+    compartilharStatus: false,
+    dadosAnalytics: true
+  });
+
+  // Verificar autenticação
   useEffect(() => {
-    const carregarConfiguracoes = async () => {
-      try {
-        // Obter dados da sessão
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          return;
-        }
-        
-        setUser(session.user);
-        
-        // Carregar configurações do usuário
-        const { data, error } = await supabase
-          .from('configuracoes')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single();
-          
-        if (error && error.code !== 'PGRST116') {
-          // PGRST116 significa que não encontrou nenhum resultado (config não existe ainda)
-          throw error;
-        }
-        
-        if (data) {
-          setDarkMode(data.dark_mode || false);
-          setNotificacoesApp(data.notificacoes_app !== false);
-          setAutoSave(data.auto_save !== false);
-          setTemplatePadrao(data.template_padrao || '');
-        }
-        
-        // Verificar preferência de tema no localStorage
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'dark') {
-          setDarkMode(true);
-          document.documentElement.classList.add('dark');
-        }
-      } catch (error) {
-        console.error('Erro ao carregar configurações:', error);
-        setMessage({ 
-          type: 'error', 
-          text: 'Erro ao carregar configurações. Por favor, tente novamente.'
-        });
-      } finally {
-        setLoading(false);
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.push('/auth/login');
+        return;
       }
+
+      setUserId(session.user.id);
+      setUserEmail(session.user.email);
+      await carregarConfiguracoes(session.user.id);
+      setLoading(false);
     };
 
-    carregarConfiguracoes();
+    checkAuth();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage({ type: '', text: '' });
-
+  // Carregar configurações
+  const carregarConfiguracoes = async (uid) => {
     try {
       const { data, error } = await supabase
-        .from('configuracoes')
-        .upsert({
-          user_id: user.id,
-          dark_mode: darkMode,
-          notificacoes_app: notificacoesApp,
-          auto_save: autoSave,
-          template_padrao: templatePadrao,
-          updated_at: new Date().toISOString()
-        })
-        .select();
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', uid)
+        .single();
 
-      if (error) throw error;
-
-      // Atualizar tema
-      if (darkMode) {
-        document.documentElement.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
+      if (error && error.code !== 'PGRST116') {
+        throw error;
       }
 
-      setMessage({ 
-        type: 'success', 
-        text: 'Configurações atualizadas com sucesso!' 
-      });
+      if (data) {
+        setConfig({
+          temaEscuro: data.tema_escuro ?? true,
+          notificacoes: data.notificacoes ?? false,
+          emailDigest: data.email_digest ?? false,
+          compartilharStatus: data.compartilhar_status ?? false,
+          dadosAnalytics: data.dados_analytics ?? true
+        });
+      }
     } catch (error) {
-      console.error('Erro ao atualizar configurações:', error);
-      setMessage({ 
-        type: 'error', 
-        text: 'Erro ao atualizar configurações. Por favor, tente novamente.' 
-      });
-    } finally {
-      setSaving(false);
+      console.error('Erro ao carregar configurações:', error);
+      toast.error('Não foi possível carregar suas configurações');
     }
   };
 
-  const apagarConta = async () => {
-    if (!confirm('ATENÇÃO: Esta ação excluirá permanentemente sua conta e todos os seus dados. Esta ação não pode ser desfeita. Deseja continuar?')) {
-      return;
-    }
-    
-    const confirmEmail = prompt('Para confirmar, digite seu email:');
-    
-    if (confirmEmail !== user.email) {
-      alert('Email incorreto. Exclusão de conta cancelada.');
-      return;
-    }
-    
+  // Salvar configurações
+  const salvarConfiguracoes = async () => {
     try {
-      setMessage({ type: '', text: '' });
-      setSaving(true);
-      
-      // Excluir conta no Supabase Auth
-      const { error } = await supabase.rpc('delete_user');
-      
+      if (!userId) return;
+
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({
+          user_id: userId,
+          tema_escuro: config.temaEscuro,
+          notificacoes: config.notificacoes,
+          email_digest: config.emailDigest,
+          compartilhar_status: config.compartilharStatus,
+          dados_analytics: config.dadosAnalytics,
+          updated_at: new Date()
+        });
+
       if (error) throw error;
       
-      alert('Sua conta foi excluída. Você será redirecionado para a página inicial.');
-      await supabase.auth.signOut();
-      window.location.href = '/';
+      toast.success('Configurações salvas com sucesso!');
     } catch (error) {
-      console.error('Erro ao excluir conta:', error);
-      setMessage({ 
-        type: 'error', 
-        text: 'Erro ao excluir conta. Por favor, entre em contato com o suporte.' 
-      });
-    } finally {
-      setSaving(false);
+      console.error('Erro ao salvar configurações:', error);
+      toast.error('Erro ao salvar configurações. Tente novamente.');
     }
   };
 
-  return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-100">
-        <Head>
-          <title>Configurações | CriaPrompt</title>
-          <meta name="description" content="Configurações da sua conta no CriaPrompt" />
-        </Head>
+  // Abrir modal de confirmação
+  const iniciarExclusaoConta = () => {
+    setConfirmEmail('');
+    setConfirmEmailError('');
+    setShowDeleteModal(true);
+  };
 
-        <Header />
+  // Verificar email e confirmar exclusão
+  const confirmarExclusao = () => {
+    if (confirmEmail !== userEmail) {
+      setConfirmEmailError('O email digitado não corresponde ao seu email.');
+      return;
+    }
+    
+    setConfirmEmailError('');
+    setShowDeleteModal(false);
+    excluirConta();
+  };
 
-        <main className="container-app py-10">
-          <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
-            Configurações
-          </h1>
+  // Excluir conta
+  const excluirConta = async () => {
+    try {
+      setLoading(true);
 
-          <div className="max-w-2xl mx-auto">
-            {message.text && (
-              <div className={`mb-6 p-4 rounded-md ${
-                message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-              }`}>
-                {message.text}
+      // 1. Excluir dados do usuário (favoritos, prompts, configurações)
+      await supabase.from('favoritos').delete().eq('user_id', userId);
+      await supabase.from('prompts').delete().eq('user_id', userId);
+      await supabase.from('user_settings').delete().eq('user_id', userId);
+      await supabase.from('perfis').delete().eq('user_id', userId);
+      
+      // 2. Excluir a conta no Auth
+      const { error } = await supabase.auth.admin.deleteUser(userId);
+      
+      if (error) {
+        // Fallback: Se não puder excluir diretamente (limitações de permissão)
+        // Deslogar o usuário
+        await supabase.auth.signOut();
+        toast.success('Sua sessão foi encerrada. Entre em contato com o suporte para excluir sua conta permanentemente.');
+        router.push('/');
+        return;
+      }
+      
+      // 3. Deslogar o usuário
+      await supabase.auth.signOut();
+      
+      toast.success('Sua conta foi excluída com sucesso');
+      router.push('/');
+    } catch (error) {
+      console.error('Erro ao excluir conta:', error);
+      toast.error('Erro ao excluir conta. Entre em contato com o suporte.');
+      setLoading(false);
+    }
+  };
+
+  // Conteúdo da página
+  const content = (
+    <div className="mx-auto max-w-4xl space-y-8">
+      <Head>
+        <title>Configurações | CriaPrompt</title>
+      </Head>
+      
+      <Card className="bg-background/30 backdrop-blur-xl border border-white/20">
+        <CardHeader>
+          <CardTitle>Configurações da Conta</CardTitle>
+          <CardDescription>Personalize sua experiência no CriaPrompt</CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          {/* Tabs de navegação */}
+          <div className="flex border-b border-white/10 mb-6">
+            <button
+              onClick={() => setActiveTab('aparencia')}
+              className={`px-4 py-2 font-medium flex items-center gap-2 ${
+                activeTab === 'aparencia' 
+                  ? 'border-b-2 border-primary text-primary' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Monitor size={16} />
+              Aparência
+            </button>
+            <button
+              onClick={() => setActiveTab('notificacoes')}
+              className={`px-4 py-2 font-medium flex items-center gap-2 ${
+                activeTab === 'notificacoes' 
+                  ? 'border-b-2 border-primary text-primary' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Bell size={16} />
+              Notificações
+            </button>
+            <button
+              onClick={() => setActiveTab('privacidade')}
+              className={`px-4 py-2 font-medium flex items-center gap-2 ${
+                activeTab === 'privacidade' 
+                  ? 'border-b-2 border-primary text-primary' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Shield size={16} />
+              Privacidade
+            </button>
+            <button
+              onClick={() => setActiveTab('conta')}
+              className={`px-4 py-2 font-medium flex items-center gap-2 ${
+                activeTab === 'conta' 
+                  ? 'border-b-2 border-primary text-primary' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Cog size={16} />
+              Conta
+            </button>
+          </div>
+          
+          {/* Conteúdo de cada aba */}
+          <div className="py-4">
+            {/* Aba Aparência */}
+            {activeTab === 'aparencia' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-medium">Tema Escuro</h3>
+                    <p className="text-sm text-muted-foreground">Ativar ou desativar o tema escuro</p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Sun className="h-5 w-5 text-muted-foreground" />
+                    <Switch 
+                      checked={config.temaEscuro}
+                      onCheckedChange={(checked) => setConfig({...config, temaEscuro: checked})}
+                    />
+                    <Moon className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                </div>
+                
+                <div className="flex justify-end pt-4">
+                  <Button variant="default" onClick={salvarConfiguracoes} className="bg-primary">
+                    <Save className="h-4 w-4 mr-2" />
+                    Salvar Alterações
+                  </Button>
+                </div>
               </div>
             )}
-
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">Preferências de Aplicativo</h2>
-              
-              <form onSubmit={handleSubmit}>
-                <div className="mb-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={darkMode}
-                      onChange={(e) => setDarkMode(e.target.checked)}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-700">Modo escuro</span>
-                  </label>
-                </div>
-
-                <div className="mb-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={notificacoesApp}
-                      onChange={(e) => setNotificacoesApp(e.target.checked)}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-700">Receber notificações no aplicativo</span>
-                  </label>
-                </div>
-
-                <div className="mb-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={autoSave}
-                      onChange={(e) => setAutoSave(e.target.checked)}
-                      className="mr-2"
-                    />
-                    <span className="text-gray-700">Salvar rascunhos automaticamente</span>
-                  </label>
-                </div>
-
-                <div className="mb-6">
-                  <label htmlFor="templatePadrao" className="block text-gray-700 mb-2">
-                    Template padrão para novos prompts
-                  </label>
-                  <textarea
-                    id="templatePadrao"
-                    value={templatePadrao}
-                    onChange={(e) => setTemplatePadrao(e.target.value)}
-                    rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Digite um template base para seus novos prompts..."
+            
+            {/* Aba Notificações */}
+            {activeTab === 'notificacoes' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-medium">Notificações no navegador</h3>
+                    <p className="text-sm text-muted-foreground">Receba notificações no navegador</p>
+                  </div>
+                  <Switch 
+                    checked={config.notificacoes}
+                    onCheckedChange={(checked) => setConfig({...config, notificacoes: checked})}
                   />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Este texto será inserido automaticamente ao criar um novo prompt
-                  </p>
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition duration-300 disabled:opacity-50"
-                >
-                  {saving ? 'Salvando...' : 'Salvar Configurações'}
-                </button>
-              </form>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-medium">Resumo por e-mail</h3>
+                    <p className="text-sm text-muted-foreground">Receba resumos semanais por e-mail</p>
+                  </div>
+                  <Switch 
+                    checked={config.emailDigest}
+                    onCheckedChange={(checked) => setConfig({...config, emailDigest: checked})}
+                  />
+                </div>
+                
+                <div className="flex justify-end pt-4">
+                  <Button variant="default" onClick={salvarConfiguracoes} className="bg-primary">
+                    <Save className="h-4 w-4 mr-2" />
+                    Salvar Alterações
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {/* Aba Privacidade */}
+            {activeTab === 'privacidade' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-medium">Compartilhar status de atividade</h3>
+                    <p className="text-sm text-muted-foreground">Permite que outros usuários vejam quando você está online</p>
+                  </div>
+                  <Switch 
+                    checked={config.compartilharStatus}
+                    onCheckedChange={(checked) => setConfig({...config, compartilharStatus: checked})}
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-medium">Coleta de dados de uso</h3>
+                    <p className="text-sm text-muted-foreground">Ajude-nos a melhorar compartilhando dados de uso anônimos</p>
+                  </div>
+                  <Switch 
+                    checked={config.dadosAnalytics}
+                    onCheckedChange={(checked) => setConfig({...config, dadosAnalytics: checked})}
+                  />
+                </div>
+                
+                <div className="flex justify-end pt-4">
+                  <Button variant="default" onClick={salvarConfiguracoes} className="bg-primary">
+                    <Save className="h-4 w-4 mr-2" />
+                    Salvar Alterações
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {/* Aba Conta */}
+            {activeTab === 'conta' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-base font-medium text-red-500">Zona de perigo</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Ações irreversíveis para sua conta
+                  </p>
+                  
+                  <div className="bg-red-900/20 p-4 rounded-md border border-red-900/30">
+                    <h4 className="font-medium mb-2">Excluir conta</h4>
+                    <p className="text-sm text-gray-300 mb-4">
+                      Ao excluir sua conta, todos os seus dados serão permanentemente removidos. Esta ação não pode ser desfeita.
+                    </p>
+                    <Button variant="destructive" onClick={iniciarExclusaoConta}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir minha conta
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* Modal de confirmação de exclusão de conta */}
+      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <DialogContent className="bg-background/95 backdrop-blur-xl border border-white/20">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Confirmação de exclusão de conta
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação é irreversível e todos os seus dados serão excluídos permanentemente.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-white mb-4">
+              Para confirmar a exclusão, digite seu email abaixo:
+              <span className="font-medium block mt-1">{userEmail}</span>
+            </p>
+            
+            <div className="mb-4">
+              <input
+                type="email"
+                value={confirmEmail}
+                onChange={(e) => setConfirmEmail(e.target.value)}
+                placeholder="Seu email"
+                className="w-full px-3 py-2 bg-background/50 border border-white/20 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              {confirmEmailError && (
+                <p className="text-xs text-red-400 mt-1">{confirmEmailError}</p>
+              )}
             </div>
-
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4 text-red-600">Zona de Perigo</h2>
-              
-              <p className="mb-4 text-gray-700">
-                A exclusão da conta é permanente e removerá todos os seus prompts, favoritos e dados pessoais.
+            
+            <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-md mb-4">
+              <p className="text-sm text-red-200">
+                Ao excluir sua conta, você perderá acesso a:
               </p>
-              
-              <button
-                onClick={apagarConta}
-                disabled={saving}
-                className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 transition duration-300 disabled:opacity-50"
-              >
-                Excluir minha conta
-              </button>
+              <ul className="text-xs text-red-200 mt-2 list-disc list-inside space-y-1">
+                <li>Todos os seus prompts salvos</li>
+                <li>Histórico de uso e personalização</li>
+                <li>Configurações e preferências</li>
+                <li>Informações de perfil</li>
+              </ul>
             </div>
           </div>
-        </main>
-      </div>
-    </AuthGuard>
+          
+          <DialogFooter className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setShowDeleteModal(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmarExclusao}
+              disabled={!confirmEmail}
+            >
+              Confirmar exclusão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+
+  return (
+    <DashboardLayout title="Configurações">
+      {content}
+    </DashboardLayout>
   );
 }

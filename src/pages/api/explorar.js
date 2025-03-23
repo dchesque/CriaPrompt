@@ -1,14 +1,14 @@
 import Head from 'next/head';
-import Header from '../components/Header';
+import Header from '../../components/Header';
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../../lib/supabaseClient';
 import Link from 'next/link';
 
 export default function Explorar() {
-  const [prompts, setPrompts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [categoriaFiltro, setCategoriaFiltro] = useState('');
+  const [promptsData, setPromptsData] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todas');
   const [userId, setUserId] = useState(null);
   const [favoritos, setFavoritos] = useState([]);
 
@@ -49,7 +49,7 @@ export default function Explorar() {
         const { data: promptsData, error: promptsError } = await query;
 
         if (promptsError) throw promptsError;
-        setPrompts(promptsData || []);
+        setPromptsData(promptsData || []);
 
         // Se usuário estiver logado, carregar seus favoritos
         if (currentUserId) {
@@ -64,7 +64,7 @@ export default function Explorar() {
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     }
 
@@ -145,7 +145,7 @@ export default function Explorar() {
                 onChange={(e) => setCategoriaFiltro(e.target.value)}
                 className="w-full md:w-auto px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="">Todas as categorias</option>
+                <option value="todas">Todas as categorias</option>
                 <option value="geral">Geral</option>
                 <option value="criativo">Criativo</option>
                 <option value="academico">Acadêmico</option>
@@ -155,9 +155,9 @@ export default function Explorar() {
           </div>
         </div>
 
-        {loading ? (
+        {isLoading ? (
           <p className="text-center">Carregando prompts...</p>
-        ) : prompts.length === 0 ? (
+        ) : promptsData.length === 0 ? (
           <div className="bg-white rounded-lg shadow p-8 text-center">
             <p className="text-gray-600 mb-4">
               Nenhum prompt encontrado para os critérios selecionados.
@@ -165,7 +165,7 @@ export default function Explorar() {
             {categoriaFiltro || termoBusca ? (
               <button
                 onClick={() => {
-                  setCategoriaFiltro('');
+                  setCategoriaFiltro('todas');
                   setTermoBusca('');
                 }}
                 className="text-indigo-600 hover:text-indigo-800"
@@ -182,7 +182,7 @@ export default function Explorar() {
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {prompts.map((prompt) => (
+            {promptsData.map((prompt) => (
               <Link href={`/prompts/${prompt.id}`} key={prompt.id}>
                 <div className="bg-white rounded-lg shadow p-6 cursor-pointer hover:shadow-lg transition-shadow duration-300">
                   <div className="flex justify-between items-start mb-4">

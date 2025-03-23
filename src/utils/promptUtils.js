@@ -13,7 +13,7 @@ export const isPromptOwner = (promptUserId, currentUserId) => {
   
   /**
    * Função para extrair campos personalizados do texto de um prompt
-   * Busca por padrões como #campo no texto
+   * Busca por padrões como (campo) no texto
    * 
    * @param {string} promptText - Texto do prompt
    * @returns {Array} - Array de objetos com campos encontrados
@@ -21,8 +21,8 @@ export const isPromptOwner = (promptUserId, currentUserId) => {
   export const extractCustomFields = (promptText) => {
     if (!promptText) return [];
     
-    // Regex para encontrar campos no formato #campo
-    const regex = /#([a-zA-Z0-9_]+)/g;
+    // Regex para encontrar campos no formato (campo)
+    const regex = /\(([a-zA-Z0-9_]+)\)/g;
     const matches = promptText.matchAll(regex);
     
     // Extrair campos únicos
@@ -54,7 +54,7 @@ export const isPromptOwner = (promptUserId, currentUserId) => {
     // Substituir cada campo pelo seu valor
     Object.entries(fieldValues).forEach(([field, value]) => {
       if (value) {
-        const regex = new RegExp(`#${field}`, 'g');
+        const regex = new RegExp(`\\(${field}\\)`, 'g');
         modifiedText = modifiedText.replace(regex, value);
       }
     });
